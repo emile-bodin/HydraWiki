@@ -7,7 +7,6 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Response, status
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from .config import Settings, validate_settings
@@ -50,13 +49,6 @@ async def lifespan(_: FastAPI):
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=(settings.app_name if settings else "HydraWiki"), version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:8080"],
-        allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["Content-Type"],
-    )
-
     @app.get("/health/live", response_model=HealthResponse, tags=["health"])
     def health_live() -> HealthResponse:
         return liveness(app.state.settings or validate_settings())
@@ -109,6 +101,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def delete_repository(repository_id: UUID, response: Response) -> RepositoryResponse:
         current = app.state.settings or validate_settings()
         store = store_for(current)
+        receipt = store.get_deletion_receipt(repository_id)
+        if receipt is not None:
+            return RepositoryResponse.model_validate({**receipt, "lifecycle_status": "deleted", "last_error": None})
         row = store.mark_deleting(repository_id)
         if row is None:
             raise HTTPException(status_code=404, detail="repository not found")
@@ -120,21 +115,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if workspace.parent != Path(current.workspace_root).resolve() or not workspace.is_dir():
                     raise RuntimeError("repository workspace is not a safe managed directory")
                 rmtree(workspace)
-            store.delete_relational_data(repository_id)
+            receipt = store.complete_delete(row)
         except Exception as exc:  # lifecycle must remain visible when cleanup is incomplete
             failed = store.mark_delete_failed(repository_id, str(exc))
             response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
             return RepositoryResponse.model_validate(failed)
         response.status_code = status.HTTP_200_OK
-        return RepositoryResponse(
-            id=repository_id,
-            source_type=row["source_type"],
-            source_value=row["source_value"],
-            selected_ref=row["selected_ref"],
-            display_name=row["display_name"],
-            lifecycle_status="deleted",
-            last_error=None,
-        )
+        return RepositoryResponse.model_validate({**receipt, "lifecycle_status": "deleted", "last_error": None})
 
     return app
 

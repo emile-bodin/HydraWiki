@@ -37,7 +37,9 @@ def test_registration_survives_new_app_and_delete_removes_workspace(tmp_path: Pa
         assert deleted.status_code == 200
         assert deleted.json()["lifecycle_status"] == "deleted"
         assert not managed_workspace.exists()
-        assert restarted_client.delete(f"/api/repositories/{repository_id}").status_code == 404
+        repeated_delete = restarted_client.delete(f"/api/repositories/{repository_id}")
+        assert repeated_delete.status_code == 200
+        assert repeated_delete.json()["lifecycle_status"] == "deleted"
 
         failed_created = restarted_client.post("/api/repositories", json={"source_type": "local", "path": "repo", "display_name": "Retry"})
         failed_id = failed_created.json()["id"]

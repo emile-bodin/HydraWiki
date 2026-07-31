@@ -6,4 +6,4 @@ def test_repository_lifecycle_migration_is_versioned_and_cascades_runs() -> None
     assert "CREATE TABLE IF NOT EXISTS repositories" in migration
     assert "CREATE TABLE IF NOT EXISTS ingestion_runs" in migration
     assert "REFERENCES repositories(id) ON DELETE CASCADE" in migration
-    assert "CREATE TABLE IF NOT EXISTS schema_migrations" not in migration
+    assert "repository_deletion_receipts" in migration

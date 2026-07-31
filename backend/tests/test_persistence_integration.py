@@ -22,7 +22,15 @@ def test_repository_persists_after_new_store_and_delete_is_idempotent(tmp_path: 
     restarted_store = RepositoryStore(Database(DATABASE_URL))
     assert restarted_store.get(repository_id)["display_name"] == "Fixture"
     restarted_store.mark_deleting(repository_id)
-    restarted_store.delete_relational_data(repository_id)
+    receipt = restarted_store.complete_delete({
+        "id": repository_id,
+        "source_type": "local",
+        "source_value": "fixture",
+        "selected_ref": None,
+        "display_name": "Fixture",
+    })
     assert restarted_store.get(repository_id) is None
-    # A second delete attempt has no row to remove and therefore cannot claim success.
-    assert restarted_store.mark_deleting(repository_id) is None
+    assert receipt["id"] == repository_id
+    # A second delete attempt can return the durable receipt without claiming
+    # cleanup happened before the first completion transaction.
+    assert restarted_store.get_deletion_receipt(repository_id)["display_name"] == "Fixture"

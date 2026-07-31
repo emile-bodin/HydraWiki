@@ -23,3 +23,12 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
 );
 
 CREATE INDEX IF NOT EXISTS ingestion_runs_repository_id_idx ON ingestion_runs(repository_id);
+
+CREATE TABLE IF NOT EXISTS repository_deletion_receipts (
+    id UUID PRIMARY KEY,
+    source_type TEXT NOT NULL CHECK (source_type IN ('local', 'public_git')),
+    source_value TEXT NOT NULL,
+    selected_ref TEXT,
+    display_name TEXT NOT NULL,
+    deleted_at TIMESTAMPTZ NOT NULL
+);

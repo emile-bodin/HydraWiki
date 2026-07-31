@@ -22,6 +22,9 @@ class Database:
 
     def migrate(self) -> None:
         with self.connection() as connection:
+            # The transaction-scoped lock serializes every API/worker migrator,
+            # including the first creation of schema_migrations itself.
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext('hydrawiki.schema_migrations'))")
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())"
             )
@@ -74,6 +77,20 @@ class RepositoryStore:
                 (error[:2000], repository_id),
             ).fetchone()
 
-    def delete_relational_data(self, repository_id: UUID) -> None:
+    def get_deletion_receipt(self, repository_id: UUID) -> dict | None:
+        self.database.migrate()
         with self.database.connection() as connection:
-            connection.execute("DELETE FROM repositories WHERE id = %s", (repository_id,))
+            return connection.execute("SELECT * FROM repository_deletion_receipts WHERE id = %s", (repository_id,)).fetchone()
+
+    def complete_delete(self, repository: dict) -> dict:
+        with self.database.connection() as connection:
+            receipt = connection.execute(
+                """INSERT INTO repository_deletion_receipts
+                (id, source_type, source_value, selected_ref, display_name, deleted_at)
+                VALUES (%(id)s, %(source_type)s, %(source_value)s, %(selected_ref)s, %(display_name)s, now())
+                ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
+                RETURNING *""",
+                repository,
+            ).fetchone()
+            connection.execute("DELETE FROM repositories WHERE id = %s", (repository["id"],))
+            return receipt

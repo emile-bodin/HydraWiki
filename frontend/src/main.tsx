@@ -13,7 +13,7 @@ type Repository = {
   last_error: string | null;
 };
 
-const API = "http://localhost:8000";
+const API = "";
 
 function App() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
