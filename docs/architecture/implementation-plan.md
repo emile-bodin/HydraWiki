@@ -47,6 +47,22 @@ Compose must persist PostgreSQL, Qdrant and ingestion workspace/cache volumes. L
 | Ollama model | `nomic-embed-text:latest`; the actual vector dimension is verified on first successful embedding and stored with the index version. A changed model or dimension requires reindexing. |
 | Initial concurrency | One ingest job, at most two embedding requests, and one generation request at a time. All are configurable per installation. |
 
+## Default workload limits
+
+These are conservative, configurable application-workload defaults for the first release. They bound source scanning, indexing and LLM generation; they are not Docker CPU or memory limits.
+
+| Limit | Default |
+|---|---:|
+| Repository on-disk size | 1 GiB |
+| Eligible text content per repository | 100 MiB |
+| Eligible source files per repository | 25,000 |
+| Eligible source-file size | 2 MiB per file |
+| Generation calls per task | 25 |
+| Total generated output per task | 200,000 tokens |
+| Generated output per call | 8,000 tokens |
+
+Docker CPU and memory limits remain separate deployment settings and are not fixed by this decision.
+
 The endpoint shape, timeouts, retry behavior, credentials, local root, and all limits are deployment configuration. No secret, personal subscription mechanism, or personal network address is a product requirement.
 
 ## Persistent data model
@@ -140,6 +156,6 @@ Do not adopt their in-memory/simple-cache job lifecycle, file/pickle index exist
 
 Before a schema upgrade, take a PostgreSQL backup and Qdrant snapshot. PostgreSQL remains authoritative; vectors can be rebuilt from stored chunks but are backed up to avoid costly re-embedding. Restore verifies compatibility before startup. Local repositories remain host-owned source data, not HydraWiki backup data.
 
-## Remaining decision before Phase 1 approval
+## Phase 1 approval gate
 
-Choose documented, configurable defaults for maximum repository size and generation budget. No values are implied by this plan. Once those defaults are approved, create narrowly scoped child issues for phases 1–8.
+The documented workload defaults and initial concurrency are approved. Create narrowly scoped child issues for phases 1–8 only after this plan is accepted through the normal review process.
