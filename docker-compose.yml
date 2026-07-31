@@ -18,7 +18,7 @@ services:
       - "${LOCAL_REPOSITORIES_ROOT:-./repositories}:/repositories:ro"
       - workspace-data:/var/lib/hydrawiki/workspaces
     ports:
-      - "8000:8000"
+      - "8191:8000"
     depends_on:
       postgres:
         condition: service_healthy
