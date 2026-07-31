@@ -1,0 +1,7 @@
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+backend/**/*.egg-info/
+backend/**/__pycache__/
+backend/.pytest_cache/
+.env
