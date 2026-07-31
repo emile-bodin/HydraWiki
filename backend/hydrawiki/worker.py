@@ -3,10 +3,12 @@
 import time
 
 from .config import validate_settings
+from .persistence import Database
 
 
 def run() -> None:
-    validate_settings()
+    settings = validate_settings()
+    Database(str(settings.database_url)).migrate()
     while True:
         time.sleep(60)
 

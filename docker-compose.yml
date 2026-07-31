@@ -12,6 +12,11 @@ services:
     environment:
       HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
       HYDRAWIKI_QDRANT_URL: "${HYDRAWIKI_QDRANT_URL:-http://qdrant:6333}"
+      HYDRAWIKI_LOCAL_REPOSITORIES_ROOT: /repositories
+      HYDRAWIKI_WORKSPACE_ROOT: /var/lib/hydrawiki/workspaces
+    volumes:
+      - "${LOCAL_REPOSITORIES_ROOT:-./repositories}:/repositories:ro"
+      - workspace-data:/var/lib/hydrawiki/workspaces
     ports:
       - "8000:8000"
     depends_on:
@@ -31,11 +36,16 @@ services:
     environment:
       HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
       HYDRAWIKI_QDRANT_URL: "${HYDRAWIKI_QDRANT_URL:-http://qdrant:6333}"
+      HYDRAWIKI_LOCAL_REPOSITORIES_ROOT: /repositories
+      HYDRAWIKI_WORKSPACE_ROOT: /var/lib/hydrawiki/workspaces
     depends_on:
       postgres:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    volumes:
+      - "${LOCAL_REPOSITORIES_ROOT:-./repositories}:/repositories:ro"
+      - workspace-data:/var/lib/hydrawiki/workspaces
 
   postgres:
     image: postgres:17-alpine
@@ -64,3 +74,4 @@ services:
 volumes:
   postgres-data:
   qdrant-data:
+  workspace-data:

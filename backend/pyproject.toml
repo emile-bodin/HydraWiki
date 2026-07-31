@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",
   "pydantic-settings>=2.6,<3",
+  "psycopg[binary]>=3.2,<4",
   "uvicorn[standard]>=0.34,<1",
 ]
 
@@ -25,3 +26,6 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.package-data]
+hydrawiki = ["migrations/*.sql"]
