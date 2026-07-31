@@ -1,6 +1,6 @@
 # HydraWiki implementation plan
 
-Status: proposed; no implementation has started.
+Status: partially approved; no implementation has started.
 
 ## Purpose
 
@@ -8,8 +8,9 @@ HydraWiki will be a self-hosted, Docker-based code documentation platform for lo
 
 External services are existing dependencies and are not installed or replaced by HydraWiki:
 
-- Generation: LiteLLM at `http://192.168.86.75:4000/v1`, with configurable model alias such as `chatgpt`.
-- Embeddings: Ollama on GPU host `192.168.86.74`.
+- Generation: a configurable OpenAI-compatible/LiteLLM endpoint. The current installation uses `http://192.168.86.75:4000/v1` and model `gpt-5.4`. A model alias such as `chatgpt` is optional and must not be assumed.
+- Embeddings: a configurable Ollama endpoint. The current installation uses host `192.168.86.74` and embedding model `nomic-embed-text:latest`.
+- Credentials are deployment configuration only: server-side, outside the repository and browser.
 
 ## MVP scope
 
@@ -34,7 +35,19 @@ Excluded from MVP: private Git credentials, multi-user authorization, automatic 
 - External Ollama embedding adapter
 - Docker Compose for HydraWiki services only
 
-Compose must persist PostgreSQL, Qdrant and ingestion workspace/cache volumes. Local repository paths are accepted only below `LOCAL_REPOSITORIES_ROOT`; path traversal and arbitrary host paths are rejected.
+Compose must persist PostgreSQL, Qdrant and ingestion workspace/cache volumes. Local repository paths are accepted only below an explicitly configured `LOCAL_REPOSITORIES_ROOT`; that host root is mounted read-only. Path traversal and arbitrary host paths are rejected.
+
+## Recorded configuration decisions
+
+| Area | Decision |
+|---|---|
+| Vector store | Qdrant, not pgvector. |
+| Relational data | PostgreSQL remains the authoritative lifecycle and product database. |
+| Generation model | The adapter model is configurable; the current installation uses `gpt-5.4`. |
+| Ollama model | `nomic-embed-text:latest`; the actual vector dimension is verified on first successful embedding and stored with the index version. A changed model or dimension requires reindexing. |
+| Initial concurrency | One ingest job, at most two embedding requests, and one generation request at a time. All are configurable per installation. |
+
+The endpoint shape, timeouts, retry behavior, credentials, local root, and all limits are deployment configuration. No secret, personal subscription mechanism, or personal network address is a product requirement.
 
 ## Persistent data model
 
@@ -127,10 +140,6 @@ Do not adopt their in-memory/simple-cache job lifecycle, file/pickle index exist
 
 Before a schema upgrade, take a PostgreSQL backup and Qdrant snapshot. PostgreSQL remains authoritative; vectors can be rebuilt from stored chunks but are backed up to avoid costly re-embedding. Restore verifies compatibility before startup. Local repositories remain host-owned source data, not HydraWiki backup data.
 
-## Decisions required before implementation
+## Remaining decision before Phase 1 approval
 
-1. Confirm Qdrant rather than pgvector.
-2. Define permitted local repository root(s) and Docker permissions.
-3. Specify Ollama embedding model, endpoint format and vector dimension.
-4. Validate LiteLLM authentication and the `chatgpt` model alias.
-5. Define repository size/concurrency limits and expected generation budget.
+Choose documented, configurable defaults for maximum repository size and generation budget. No values are implied by this plan. Once those defaults are approved, create narrowly scoped child issues for phases 1–8.
