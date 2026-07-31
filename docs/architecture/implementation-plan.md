@@ -98,9 +98,22 @@ Untrusted code and Markdown require source path restrictions, HTML sanitization 
 
 ## Reference boundaries
 
-RepoWiki is a reference for source filtering, local/Git ingestion and dependency-graph patterns. deepwiki-open is a reference for OpenAI-compatible LiteLLM handling and line-aware splitting. Both are MIT licensed; any direct code reuse retains required copyright and license notices.
+The following references were inspected on the fixed commits below. They are design/code references, not HydraWiki dependencies, submodules or fork bases.
 
-Do not adopt their in-memory/simple-cache job lifecycle, file/pickle index existence checks, placeholder fallbacks or non-durable progress semantics.
+| Reference | Inspection baseline | License | Patterns allowed for evaluation or selective reuse |
+|---|---|---|---|
+| [RepoWiki](https://github.com/he-yufeng/RepoWiki) | [`47afa1570afbe030e647951bc18c580bb375c021`](https://github.com/he-yufeng/RepoWiki/tree/47afa1570afbe030e647951bc18c580bb375c021) | MIT | Source filtering, local/public Git ingestion patterns, language/entry-point discovery and dependency-graph/PageRank ideas. |
+| [deepwiki-open](https://github.com/AsyncFuncAI/deepwiki-open) | [`b5e766699b7f0ec5294426af53f5924d9058218b`](https://github.com/AsyncFuncAI/deepwiki-open/tree/b5e766699b7f0ec5294426af53f5924d9058218b) | MIT | OpenAI-compatible LiteLLM endpoint handling, Ollama embedding separation and line-aware text-splitting ideas. |
+
+Any direct code reuse must retain the upstream copyright and MIT license notices and be recorded in the relevant source file or third-party notice. Independent reimplementation of an observed pattern does not copy code or licensing text unless legally required.
+
+The following upstream patterns are explicitly out of scope for reuse as HydraWiki foundations:
+
+- RepoWiki's process-memory project lifecycle, simple SQLite cache, text-only scan progress and fallback/default wiki behavior.
+- deepwiki-open's file/pickle “index exists” cache checks, non-durable elapsed-time progress and cache-directory lifecycle.
+- Any placeholder content or success state produced after model, parsing, citation or Mermaid-validation failure.
+
+HydraWiki instead requires PostgreSQL as the lifecycle source of truth, a repository/file manifest with content hashes, durable numeric ingestion jobs, explicit cache-version invalidation and an idempotent delete job spanning metadata, vectors, wiki data and workspace/cache data.
 
 ## Implementation phases
 
