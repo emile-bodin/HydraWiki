@@ -22,6 +22,18 @@ Phase 1 does not contact PostgreSQL, Qdrant, LiteLLM, or Ollama from these
 checks. Persistence and provider connectivity checks are introduced with their
 respective approved phases.
 
+## Required deployment configuration
+
+The API and worker require `HYDRAWIKI_DATABASE_URL` at startup. The Compose
+PostgreSQL service separately requires `HYDRAWIKI_POSTGRES_PASSWORD`; it is not
+stored in the repository. Compose fails before creating normal application
+containers when either value is missing. Set both externally, for example by
+copying `.env.example` to an ignored `.env` and replacing its placeholders.
+
+`HYDRAWIKI_QDRANT_URL` defaults to the Compose service URL and may be overridden
+for deployment. The example file contains placeholders only; never commit real
+credentials or private deployment addresses.
+
 ## Reserved application endpoints
 
 The following endpoint shapes are approved by the implementation plan. They are

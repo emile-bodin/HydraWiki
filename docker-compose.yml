@@ -10,8 +10,8 @@ services:
   api:
     build: ./backend
     environment:
-      HYDRAWIKI_DATABASE_URL: postgresql://hydrawiki:hydrawiki@postgres:5432/hydrawiki
-      HYDRAWIKI_QDRANT_URL: http://qdrant:6333
+      HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
+      HYDRAWIKI_QDRANT_URL: "${HYDRAWIKI_QDRANT_URL:-http://qdrant:6333}"
     ports:
       - "8000:8000"
     depends_on:
@@ -29,8 +29,8 @@ services:
     build: ./backend
     command: ["python", "-m", "hydrawiki.worker"]
     environment:
-      HYDRAWIKI_DATABASE_URL: postgresql://hydrawiki:hydrawiki@postgres:5432/hydrawiki
-      HYDRAWIKI_QDRANT_URL: http://qdrant:6333
+      HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
+      HYDRAWIKI_QDRANT_URL: "${HYDRAWIKI_QDRANT_URL:-http://qdrant:6333}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,7 +42,7 @@ services:
     environment:
       POSTGRES_DB: hydrawiki
       POSTGRES_USER: hydrawiki
-      POSTGRES_PASSWORD: hydrawiki
+      POSTGRES_PASSWORD: "${HYDRAWIKI_POSTGRES_PASSWORD:?HYDRAWIKI_POSTGRES_PASSWORD must be set externally}"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:

@@ -10,7 +10,7 @@ def test_required_service_urls_are_typed() -> None:
 
 
 def test_missing_required_configuration_fails() -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="database_url|qdrant_url"):
         Settings()
 
 
