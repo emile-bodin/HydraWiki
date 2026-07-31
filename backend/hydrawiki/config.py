@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535)
     database_url: AnyUrl
     qdrant_url: AnyHttpUrl
+    local_repositories_root: str = "/repositories"
+    workspace_root: str = "/var/lib/hydrawiki/workspaces"
 
 
 @lru_cache
