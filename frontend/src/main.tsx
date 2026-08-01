@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -79,6 +79,7 @@ export function App() {
   const [page, setPage] = useState<WikiPage | null>(null);
   const [source, setSource] = useState<IndexedSource | null>(null);
   const [error, setError] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
 
   async function loadRepositories() {
     try {
@@ -118,7 +119,7 @@ export function App() {
       : { source_type: "public_git", url: data.get("url"), ref: data.get("ref"), display_name: data.get("display_name") };
     try {
       await request<Repository>("/api/repositories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      event.currentTarget.reset();
+      formRef.current?.reset();
       await loadRepositories();
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "Registration failed");
@@ -160,7 +161,7 @@ export function App() {
   return <main>
     <p className="eyebrow">HydraWiki</p>
     <h1>Repositories</h1>
-    <form onSubmit={register}>
+    <form ref={formRef} onSubmit={register}>
       <label>Name <input name="display_name" required /></label>
       <label>Source type <select value={sourceType} onChange={(event) => setSourceType(event.target.value as "local" | "public_git")}><option value="local">Local mount</option><option value="public_git">Public Git</option></select></label>
       {sourceType === "local" ? <label>Path below LOCAL_REPOSITORIES_ROOT <input name="path" required placeholder="project" /></label> : <><label>HTTPS Git URL <input name="url" type="url" required placeholder="https://github.com/org/repo.git" /></label><label>Ref <input name="ref" required placeholder="main" /></label></>}
