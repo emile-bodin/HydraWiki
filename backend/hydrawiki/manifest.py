@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from .config import Settings
 from .persistence import Database
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter
+from .indexing import index_manifest
 
 PARSER_VERSION = "text-v1"
 ELIGIBLE_SUFFIXES = frozenset(
@@ -208,32 +209,27 @@ class ManifestStore:
             current = {row["path"]: row for row in old_rows}
             classified = classify(current, files)
             for path, kind, item in classified:
+                cache_id = None
+                if kind != "missing":
+                    cache = connection.execute(
+                        "SELECT id FROM content_cache WHERE content_sha256 = %s AND parser_version = %s",
+                        (item.content_sha256, PARSER_VERSION),
+                    ).fetchone()
+                    if cache is None:
+                        cache_id = uuid4()
+                        connection.execute(
+                            "INSERT INTO content_cache (id, content_sha256, parser_version, normalized_content, byte_size, line_count) VALUES (%s, %s, %s, %s, %s, %s)",
+                            (cache_id, item.content_sha256, PARSER_VERSION, item.normalized_content, len(item.normalized_content.encode("utf-8")), item.normalized_content.count("\n") + 1),
+                        )
+                    else:
+                        cache_id = cache["id"]
                 connection.execute(
-                    "INSERT INTO manifest_entries (manifest_run_id, path, content_sha256, byte_size, classification) VALUES (%s, %s, %s, %s, %s)",
-                    (run_id, path, item.content_sha256 if item else None, item.byte_size if item else None, kind),
-                )
-                if kind == "missing":
-                    connection.execute("DELETE FROM source_files WHERE repository_id = %s AND path = %s", (repository_id, path))
-                    continue
-                cache = connection.execute(
-                    "SELECT id FROM content_cache WHERE content_sha256 = %s AND parser_version = %s",
-                    (item.content_sha256, PARSER_VERSION),
-                ).fetchone()
-                if cache is None:
-                    cache_id = uuid4()
-                    connection.execute(
-                        "INSERT INTO content_cache (id, content_sha256, parser_version, normalized_content, byte_size, line_count) VALUES (%s, %s, %s, %s, %s, %s)",
-                        (cache_id, item.content_sha256, PARSER_VERSION, item.normalized_content, len(item.normalized_content.encode("utf-8")), item.normalized_content.count("\n") + 1),
-                    )
-                else:
-                    cache_id = cache["id"]
-                connection.execute(
-                    "INSERT INTO source_files (repository_id, path, content_sha256, byte_size, content_cache_id, parser_version, last_manifest_run_id) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (repository_id, path) DO UPDATE SET content_sha256 = EXCLUDED.content_sha256, byte_size = EXCLUDED.byte_size, content_cache_id = EXCLUDED.content_cache_id, parser_version = EXCLUDED.parser_version, last_manifest_run_id = EXCLUDED.last_manifest_run_id",
-                    (repository_id, path, item.content_sha256, item.byte_size, cache_id, PARSER_VERSION, run_id),
+                    "INSERT INTO manifest_entries (manifest_run_id, path, content_sha256, byte_size, classification, content_cache_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (run_id, path, item.content_sha256 if item else None, item.byte_size if item else None, kind, cache_id),
                 )
             counts = {kind: sum(1 for _, actual, _ in classified if actual == kind) for kind in ("new", "changed", "unchanged", "missing")}
             connection.execute(
-                "UPDATE manifest_runs SET status = 'succeeded', file_count = %s, total_bytes = %s, completed_at = now(), error = NULL WHERE id = %s",
+                "UPDATE manifest_runs SET file_count = %s, total_bytes = %s, error = NULL WHERE id = %s",
                 (len(files), sum(item.byte_size for item in files), run_id),
             )
             return counts
@@ -277,6 +273,7 @@ def run_manifest(database: Database, settings: Settings, repository: dict) -> Ma
                 raise ManifestError("repository size limit exceeded")
             files = discover_eligible_files(root, settings)
             counts = store.apply_success(repository["id"], run_id, files)
+            index_manifest(database, settings, repository["id"], run_id)
             return ManifestResult(run_id, "succeeded", counts)
         except Exception as exc:
             store.fail(run_id, str(exc))

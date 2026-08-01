@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS manifest_entries (
     content_sha256 TEXT,
     byte_size INTEGER,
     classification TEXT NOT NULL CHECK (classification IN ('new', 'changed', 'unchanged', 'missing')),
+    content_cache_id UUID REFERENCES content_cache(id),
     PRIMARY KEY (manifest_run_id, path)
 );
 

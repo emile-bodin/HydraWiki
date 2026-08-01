@@ -47,6 +47,10 @@ class ManifestRunResponse(BaseModel):
     error: str | None
     started_at: datetime
     completed_at: datetime | None
+    phase: str = "Manifest"
+    current_count: int = 0
+    total_count: int = 0
+    percentage: int = 0
 
 
 def store_for(settings: Settings) -> RepositoryStore:
