@@ -17,3 +17,11 @@ def test_manifest_delta_migration_persists_inventory_cache_and_classifications()
     assert "CREATE TABLE IF NOT EXISTS manifest_entries" in migration
     assert "'missing'" in migration
     assert "UNIQUE (content_sha256, parser_version)" in migration
+
+
+def test_wiki_generation_migration_persists_pages_artifacts_and_citations() -> None:
+    migration = files("hydrawiki.migrations").joinpath("005_wiki_generation.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS wiki_pages" in migration
+    assert "CREATE TABLE IF NOT EXISTS generation_artifacts" in migration
+    assert "CREATE TABLE IF NOT EXISTS wiki_page_sources" in migration
+    assert "line_end >= line_start" in migration

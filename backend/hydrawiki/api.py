@@ -15,6 +15,7 @@ from .health import HealthResponse, liveness, readiness
 from .manifest import ManifestBusyError, ManifestStore, run_manifest
 from .persistence import Database, RepositoryStore
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter, SourceValidationError
+from .wiki import WikiStore, generate_wiki_page
 
 
 class RepositoryRegistration(BaseModel):
@@ -51,6 +52,49 @@ class ManifestRunResponse(BaseModel):
     current_count: int = 0
     total_count: int = 0
     percentage: int = 0
+
+
+class WikiGenerationRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=200)
+    source_paths: list[str] | None = None
+
+
+class CitationResponse(BaseModel):
+    path: str
+    line_start: int
+    line_end: int
+
+
+class WikiPageResponse(BaseModel):
+    id: UUID
+    path: str
+    title: str
+    content: str
+    lifecycle_status: Literal["published"]
+    generation_run_id: UUID
+    citations: list[CitationResponse] = Field(default_factory=list)
+
+
+class WikiPageSummaryResponse(BaseModel):
+    path: str
+    title: str
+    lifecycle_status: Literal["published"]
+    generation_run_id: UUID
+
+
+class GenerationRunResponse(BaseModel):
+    id: UUID
+    repository_id: UUID
+    page_path: str
+    status: Literal["running", "succeeded", "failed"]
+    source_selection: list[dict]
+    configured_model: str | None
+    provider_model: str | None
+    prompt_version: str
+    error: str | None
+    started_at: datetime
+    completed_at: datetime | None
 
 
 def store_for(settings: Settings) -> RepositoryStore:
@@ -145,6 +189,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if store.get(run_id) is None:
             raise HTTPException(status_code=404, detail="ingestion run not found")
         return store.entries(run_id)
+
+    @app.post("/api/repositories/{repository_id}/pages", response_model=GenerationRunResponse, status_code=status.HTTP_201_CREATED)
+    def generate_page(repository_id: UUID, request: WikiGenerationRequest) -> GenerationRunResponse:
+        current = app.state.settings or validate_settings()
+        database = Database(str(current.database_url))
+        if RepositoryStore(database).get(repository_id) is None:
+            raise HTTPException(status_code=404, detail="repository not found")
+        result = generate_wiki_page(database, current, repository_id, request.path, request.title, request.source_paths)
+        row = WikiStore(database).get_run(result.run_id)
+        if row is None:
+            # The storage failure remains truthful: no page was published.
+            raise HTTPException(status_code=500, detail=result.error or "generation run could not be persisted")
+        return GenerationRunResponse.model_validate(row)
+
+    @app.get("/api/generation-runs/{run_id}", response_model=GenerationRunResponse)
+    def get_generation_run(run_id: UUID) -> GenerationRunResponse:
+        current = app.state.settings or validate_settings()
+        row = WikiStore(Database(str(current.database_url))).get_run(run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="generation run not found")
+        return GenerationRunResponse.model_validate(row)
+
+    @app.get("/api/repositories/{repository_id}/pages", response_model=list[WikiPageSummaryResponse])
+    def list_wiki_pages(repository_id: UUID) -> list[WikiPageSummaryResponse]:
+        current = app.state.settings or validate_settings()
+        database = Database(str(current.database_url))
+        if RepositoryStore(database).get(repository_id) is None:
+            raise HTTPException(status_code=404, detail="repository not found")
+        return [WikiPageSummaryResponse.model_validate(row) for row in WikiStore(database).list_pages(repository_id)]
+
+    @app.get("/api/repositories/{repository_id}/pages/{page_path:path}", response_model=WikiPageResponse)
+    def get_wiki_page(repository_id: UUID, page_path: str) -> WikiPageResponse:
+        current = app.state.settings or validate_settings()
+        row = WikiStore(Database(str(current.database_url))).get_page(repository_id, page_path)
+        if row is None:
+            raise HTTPException(status_code=404, detail="wiki page not found")
+        return WikiPageResponse.model_validate(row)
 
     @app.delete("/api/repositories/{repository_id}", response_model=RepositoryResponse)
     def delete_repository(repository_id: UUID, response: Response) -> RepositoryResponse:
