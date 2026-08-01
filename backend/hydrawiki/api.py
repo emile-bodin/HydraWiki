@@ -36,6 +36,8 @@ class RepositoryResponse(BaseModel):
     display_name: str
     lifecycle_status: Literal["registered", "deleting", "deleted", "delete_failed"]
     last_error: str | None
+    last_successful_processing_at: datetime | None = None
+    current_error: str | None = None
 
 
 class ManifestRunResponse(BaseModel):
@@ -95,6 +97,12 @@ class GenerationRunResponse(BaseModel):
     error: str | None
     started_at: datetime
     completed_at: datetime | None
+
+
+class IndexedSourceResponse(BaseModel):
+    path: str
+    content: str
+    line_count: int
 
 
 def store_for(settings: Settings) -> RepositoryStore:
@@ -182,6 +190,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="ingestion run not found")
         return ManifestRunResponse.model_validate(row)
 
+    @app.get("/api/repositories/{repository_id}/ingestion-runs", response_model=list[ManifestRunResponse])
+    def list_manifest_runs(repository_id: UUID) -> list[ManifestRunResponse]:
+        current = app.state.settings or validate_settings()
+        store = store_for(current)
+        if store.get(repository_id) is None:
+            raise HTTPException(status_code=404, detail="repository not found")
+        return [ManifestRunResponse.model_validate(row) for row in store.list_manifest_runs(repository_id)]
+
     @app.get("/api/ingestion-runs/{run_id}/entries")
     def get_manifest_entries(run_id: UUID) -> list[dict]:
         current = app.state.settings or validate_settings()
@@ -211,6 +227,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="generation run not found")
         return GenerationRunResponse.model_validate(row)
 
+    @app.get("/api/repositories/{repository_id}/generation-runs", response_model=list[GenerationRunResponse])
+    def list_generation_runs(repository_id: UUID) -> list[GenerationRunResponse]:
+        current = app.state.settings or validate_settings()
+        store = store_for(current)
+        if store.get(repository_id) is None:
+            raise HTTPException(status_code=404, detail="repository not found")
+        return [GenerationRunResponse.model_validate(row) for row in store.list_generation_runs(repository_id)]
+
     @app.get("/api/repositories/{repository_id}/pages", response_model=list[WikiPageSummaryResponse])
     def list_wiki_pages(repository_id: UUID) -> list[WikiPageSummaryResponse]:
         current = app.state.settings or validate_settings()
@@ -218,6 +242,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if RepositoryStore(database).get(repository_id) is None:
             raise HTTPException(status_code=404, detail="repository not found")
         return [WikiPageSummaryResponse.model_validate(row) for row in WikiStore(database).list_pages(repository_id)]
+
+    @app.get("/api/repositories/{repository_id}/sources/{source_path:path}", response_model=IndexedSourceResponse)
+    def get_indexed_source(repository_id: UUID, source_path: str) -> IndexedSourceResponse:
+        current = app.state.settings or validate_settings()
+        row = store_for(current).get_indexed_source(repository_id, source_path)
+        if row is None:
+            raise HTTPException(status_code=404, detail="indexed source not found")
+        return IndexedSourceResponse(path=row["path"], content=row["normalized_content"], line_count=row["line_count"])
 
     @app.get("/api/repositories/{repository_id}/pages/{page_path:path}", response_model=WikiPageResponse)
     def get_wiki_page(repository_id: UUID, page_path: str) -> WikiPageResponse:

@@ -51,5 +51,21 @@ intentionally not implemented in Phase 1:
 | GET | `/api/repositories/{id}/pages/{path}` | Read a wiki page |
 | DELETE | `/api/repositories/{id}` | Start repository deletion |
 
+## Phase 6 read-only operator views
+
+`GET /api/repositories` additionally returns `last_successful_processing_at`
+and `current_error`, when those durable values exist. The former is the latest
+successful manifest completion; the latter is the repository deletion error or
+the latest failed manifest error. Missing values are `null`.
+
+The following read-only endpoints expose already-persisted lifecycle and source
+data for the operator UI:
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/repositories/{id}/ingestion-runs` | Durable manifest runs, including phase and numeric progress |
+| GET | `/api/repositories/{id}/generation-runs` | Durable generation-run status and error data |
+| GET | `/api/repositories/{id}/sources/{path}` | An existing indexed source file only; it never reads a host path |
+
 No Phase-1 endpoint registers repositories, starts ingestion, indexes content,
 calls an AI service, generates wiki content, processes Mermaid, or deletes data.

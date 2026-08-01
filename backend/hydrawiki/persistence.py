@@ -44,7 +44,31 @@ class RepositoryStore:
     def list(self) -> list[dict]:
         self.database.migrate()
         with self.database.connection() as connection:
-            return list(connection.execute("SELECT * FROM repositories ORDER BY created_at DESC"))
+            return list(connection.execute(
+                """SELECT repositories.*,
+                    successful_run.completed_at AS last_successful_processing_at,
+                    CASE
+                        WHEN repositories.last_error IS NOT NULL THEN repositories.last_error
+                        WHEN latest_run.status = 'failed' THEN latest_run.error
+                        ELSE NULL
+                    END AS current_error
+                FROM repositories
+                LEFT JOIN LATERAL (
+                    SELECT completed_at
+                    FROM manifest_runs
+                    WHERE repository_id = repositories.id AND status = 'succeeded'
+                    ORDER BY completed_at DESC
+                    LIMIT 1
+                ) AS successful_run ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT status, error
+                    FROM manifest_runs
+                    WHERE repository_id = repositories.id
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                ) AS latest_run ON TRUE
+                ORDER BY repositories.created_at DESC"""
+            ))
 
     def get(self, repository_id: UUID) -> dict | None:
         self.database.migrate()
@@ -99,3 +123,30 @@ class RepositoryStore:
                 "DELETE FROM content_cache WHERE id NOT IN (SELECT content_cache_id FROM source_files) AND id NOT IN (SELECT content_cache_id FROM manifest_entries WHERE content_cache_id IS NOT NULL)"
             )
             return receipt
+
+    def list_manifest_runs(self, repository_id: UUID) -> list[dict]:
+        self.database.migrate()
+        with self.database.connection() as connection:
+            return list(connection.execute(
+                "SELECT * FROM manifest_runs WHERE repository_id = %s ORDER BY started_at DESC",
+                (repository_id,),
+            ))
+
+    def list_generation_runs(self, repository_id: UUID) -> list[dict]:
+        self.database.migrate()
+        with self.database.connection() as connection:
+            return list(connection.execute(
+                "SELECT * FROM generation_runs WHERE repository_id = %s ORDER BY started_at DESC",
+                (repository_id,),
+            ))
+
+    def get_indexed_source(self, repository_id: UUID, path: str) -> dict | None:
+        self.database.migrate()
+        with self.database.connection() as connection:
+            return connection.execute(
+                """SELECT source_files.path, content_cache.normalized_content, content_cache.line_count
+                FROM source_files
+                JOIN content_cache ON content_cache.id = source_files.content_cache_id
+                WHERE source_files.repository_id = %s AND source_files.path = %s""",
+                (repository_id, path),
+            ).fetchone()
