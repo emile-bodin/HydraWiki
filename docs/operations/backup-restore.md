@@ -32,7 +32,9 @@ Restore into an isolated Compose project with empty named volumes. Do not point 
 docker compose up -d postgres qdrant
 cat backups/DATE/hydrawiki.pg.dump | docker compose exec -T postgres pg_restore -U hydrawiki -d hydrawiki --clean --if-exists
 docker compose run --rm --no-deps -T api sh -c 'cat >/tmp/hydrawiki.snapshot && python -c "import httpx; print(httpx.post(\"http://qdrant:6333/collections/hydrawiki/snapshots/upload\", files={\"snapshot\": open(\"/tmp/hydrawiki.snapshot\", \"rb\")}).text)"' < backups/DATE/qdrant.snapshot
-docker run --rm -v hydrawiki_workspace-data:/target -v "$PWD/backups/DATE:/backup:ro alpine sh -c 'rm -rf /target/* && tar -C /target -xzf /backup/workspace-data.tar.gz'
+docker run --rm -v hydrawiki_workspace-data:/target \
+  -v "$PWD/backups/DATE:/backup:ro" \
+  alpine sh -c 'rm -rf /target/* && tar -C /target -xzf /backup/workspace-data.tar.gz'
 docker compose run --rm api python -m hydrawiki.operational verify
 ```
 
