@@ -10,3 +10,15 @@ button { cursor: pointer; background: #147d92; color: white; border: 0; }
 article { grid-template-columns: 1fr auto; align-items: center; }
 article p { color: #52616b; margin: .4rem 0; }
 .error { color: #a22626; }
+.selected { border-color: #147d92; }
+.repository-name, .page-link, .citation { color: #147d92; background: transparent; padding: 0; text-align: left; }
+.repository-name { font-size: 1.15rem; font-weight: 700; }
+.operator { margin-top: 2rem; }
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1rem; }
+.run { grid-template-columns: 1fr; }
+.run.running { border-left: .4rem solid #c28112; }
+.run.failed { border-left: .4rem solid #a22626; }
+.run.available { border-left: .4rem solid #147d92; }
+.page-link, .citation { display: block; margin: .7rem 0; text-decoration: underline; }
+.citation { display: inline-block; margin-right: 1rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f4f7f9; padding: 1rem; border-radius: .4rem; }

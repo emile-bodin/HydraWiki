@@ -80,6 +80,43 @@ def test_generation_api_exposes_only_published_cited_pages(monkeypatch):
         assert page.json()["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
 
 
+def test_operator_read_views_expose_durable_runs_and_indexed_sources_only(monkeypatch):
+    database, repository, settings = setup_indexed_repository(monkeypatch)
+    with database.connection() as connection:
+        manifest_run_id = uuid4()
+        connection.execute(
+            """INSERT INTO manifest_runs
+            (id, repository_id, status, parser_version, phase, current_count, total_count, percentage, completed_at)
+            VALUES (%s, %s, 'succeeded', 'text-v1', 'Indexed', 2, 2, 100, now())""",
+            (manifest_run_id, repository["id"]),
+        )
+    with TestClient(create_app(settings)) as client:
+        overview = client.get("/api/repositories")
+        assert overview.status_code == 200
+        assert overview.json()[0]["last_successful_processing_at"] is not None
+        assert overview.json()[0]["current_error"] is None
+
+        ingestion = client.get(f"/api/repositories/{repository['id']}/ingestion-runs")
+        assert ingestion.status_code == 200
+        assert ingestion.json()[0]["phase"] == "Indexed"
+        assert ingestion.json()[0]["current_count"] == 2
+        assert ingestion.json()[0]["total_count"] == 2
+        assert ingestion.json()[0]["percentage"] == 100
+
+        FakeGenerator.error = GenerationError("provider unavailable")
+        failed = client.post(f"/api/repositories/{repository['id']}/pages", json={"path": "failed", "title": "Failed"})
+        assert failed.status_code == 201
+        assert failed.json()["status"] == "failed"
+        generations = client.get(f"/api/repositories/{repository['id']}/generation-runs")
+        assert generations.json()[0]["status"] == "failed"
+        assert client.get(f"/api/repositories/{repository['id']}/pages").json() == []
+
+        source = client.get(f"/api/repositories/{repository['id']}/sources/app.py")
+        assert source.status_code == 200
+        assert source.json() == {"path": "app.py", "content": "first\\nsecond\\nthird\\n", "line_count": 3}
+        assert client.get(f"/api/repositories/{repository['id']}/sources/../../etc/passwd").status_code == 404
+
+
 @pytest.mark.parametrize("response", [
     '{"content":"text","citations":[]}',
     '{"content":"text","citations":[{"path":"missing.py","line_start":1,"line_end":1}]}',
