@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     qdrant_url: AnyHttpUrl
     local_repositories_root: str = "/repositories"
     workspace_root: str = "/var/lib/hydrawiki/workspaces"
+    max_repository_size_bytes: int = Field(default=1024 * 1024 * 1024, gt=0)
+    max_total_indexable_text_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
+    max_source_files: int = Field(default=25_000, gt=0)
+    max_source_file_size_bytes: int = Field(default=2 * 1024 * 1024, gt=0)
 
 
 @lru_cache
