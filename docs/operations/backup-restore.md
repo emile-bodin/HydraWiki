@@ -13,8 +13,9 @@ Stop writers first so the PostgreSQL dump and Qdrant snapshot describe the same 
 ```bash
 mkdir -p backups/$(date +%F)
 docker compose exec -T postgres pg_dump -U hydrawiki -d hydrawiki --format=custom > backups/$(date +%F)/hydrawiki.pg.dump
-curl -fsS -X POST http://localhost:6333/collections/hydrawiki/snapshots > backups/$(date +%F)/qdrant-snapshot.json
-docker compose cp qdrant:/qdrant/storage backups/$(date +%F)/qdrant-storage
+docker compose run --rm --no-deps api python -c 'import httpx; print(httpx.post("http://qdrant:6333/collections/hydrawiki/snapshots").text)' > backups/$(date +%F)/qdrant-snapshot.json
+# Copy the snapshot named in qdrant-snapshot.json from /qdrant/snapshots/hydrawiki/.
+docker compose cp qdrant:/qdrant/snapshots/hydrawiki/SNAPSHOT_NAME backups/$(date +%F)/qdrant.snapshot
 docker run --rm -v hydrawiki_workspace-data:/source:ro -v "$PWD/backups/$(date +%F):/backup alpine tar -C /source -czf /backup/workspace-data.tar.gz .
 ```
 
@@ -27,12 +28,12 @@ Restore into an isolated Compose project with empty named volumes. Do not point 
 ```bash
 docker compose up -d postgres qdrant
 cat backups/DATE/hydrawiki.pg.dump | docker compose exec -T postgres pg_restore -U hydrawiki -d hydrawiki --clean --if-exists
-docker compose cp backups/DATE/qdrant-storage/. qdrant:/qdrant/storage
+docker compose run --rm --no-deps -T api sh -c 'cat >/tmp/hydrawiki.snapshot && python -c "import httpx; print(httpx.post(\"http://qdrant:6333/collections/hydrawiki/snapshots/upload\", files={\"snapshot\": open(\"/tmp/hydrawiki.snapshot\", \"rb\")}).text)"' < backups/DATE/qdrant.snapshot
 docker run --rm -v hydrawiki_workspace-data:/target -v "$PWD/backups/DATE:/backup:ro alpine sh -c 'rm -rf /target/* && tar -C /target -xzf /backup/workspace-data.tar.gz'
-docker compose run --rm api python -m hydrawiki.operational
+docker compose run --rm api python -m hydrawiki.operational verify
 ```
 
-The final command is mandatory before starting API/worker normally. It verifies that the migration history is exactly the release migration set and that every lifecycle/index/wiki/deletion table exists. Missing, incompatible, or incomplete restores fail non-zero and must be repaired or restored again; do not run migrations as a substitute for restore verification.
+The final command is mandatory before starting API/worker normally. It verifies before any migration that the migration history is exactly the release migration set and that every lifecycle/index/wiki/deletion table exists. Missing, incompatible, or incomplete restores fail non-zero and must be repaired or restored again; do not run migrations as a substitute for restore verification. Fresh deployment or intentional upgrades use the separate Compose `schema` bootstrap service.
 
 ## Restart and end-to-end evidence
 
