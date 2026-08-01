@@ -22,6 +22,10 @@ _TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "p
 _COMMON = {"id", "class", "fill", "stroke", "stroke-width", "opacity", "transform", "aria-roledescription", "role"}
 _ATTRS = {"svg": {"width", "height", "viewBox", "xmlns", "aria-labelledby"}, "path": {"d", "marker-end", "marker-start"}, "rect": {"x", "y", "width", "height", "rx", "ry"}, "circle": {"cx", "cy", "r"}, "ellipse": {"cx", "cy", "rx", "ry"}, "line": {"x1", "x2", "y1", "y2"}, "polyline": {"points"}, "polygon": {"points"}, "text": {"x", "y", "text-anchor", "font-family", "font-size"}, "tspan": {"x", "y", "dy"}, "marker": {"markerWidth", "markerHeight", "refX", "refY", "orient", "viewBox"}}
 _ROOT_STYLE_VALUE = re.compile(r"(?:max-width:\s*([0-9]{1,5}(?:\.[0-9]{1,4})?)px|background-color:\s*white)")
+_PAINT = re.compile(r"(?:none|currentColor|transparent|white|black|#[0-9A-Fa-f]{3,8})")
+_STROKE_WIDTH = re.compile(r"(?:0|[0-9]{1,3}(?:\.[0-9]{1,3})?)(?:px)?")
+_OPACITY = re.compile(r"(?:0(?:\.\d{1,3})?|1(?:\.0{1,3})?)")
+_TRANSFORM = re.compile(r"(?:translate|scale|rotate)\([ -]?[0-9]{1,5}(?:\.\d{1,4})?(?:[ ,]+-?[0-9]{1,5}(?:\.\d{1,4})?){0,2}\)(?:\s+(?:translate|scale|rotate)\([ -]?[0-9]{1,5}(?:\.\d{1,4})?(?:[ ,]+-?[0-9]{1,5}(?:\.\d{1,4})?){0,2}\)){0,7}")
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,18 @@ def _validate_root_style(value: str) -> None:
         seen.add(property_name)
 
 
+def _validate_presentation_attribute(name: str, value: str) -> None:
+    valid = {
+        "fill": _PAINT,
+        "stroke": _PAINT,
+        "stroke-width": _STROKE_WIDTH,
+        "opacity": _OPACITY,
+        "transform": _TRANSFORM,
+    }[name]
+    if valid.fullmatch(value) is None:
+        raise MermaidError("Mermaid renderer produced unsafe SVG presentation attributes")
+
+
 def sanitize_svg(svg: str, max_bytes: int) -> str:
     """Reject, rather than repair, renderer output outside the inert SVG subset."""
     if not svg or len(svg.encode()) > max_bytes:
@@ -80,6 +96,10 @@ def sanitize_svg(svg: str, max_bytes: int) -> str:
                 continue
             if local not in _COMMON | _ATTRS.get(tag, set()) or not _TEXT.fullmatch(value):
                 raise MermaidError("Mermaid renderer produced unsafe SVG attributes")
+            if "url(" in value.lower() and local not in {"marker-end", "marker-start"}:
+                raise MermaidError("Mermaid renderer produced unsafe SVG references")
+            if local in {"fill", "stroke", "stroke-width", "opacity", "transform"}:
+                _validate_presentation_attribute(local, value)
             if local in {"id", "class", "aria-labelledby"} and not _NAME.fullmatch(value):
                 raise MermaidError("Mermaid renderer produced unsafe SVG identifiers")
             if local in {"marker-end", "marker-start"} and not re.fullmatch(r"url\(#[A-Za-z_][A-Za-z0-9_.:-]{0,127}\)", value):

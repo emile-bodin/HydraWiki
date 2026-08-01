@@ -45,6 +45,12 @@ def test_unsafe_renderer_svg_is_rejected(svg):
         sanitize_svg(svg, 1000)
 
 
+@pytest.mark.parametrize("attribute", ["fill", "stroke"])
+def test_external_url_paint_references_are_rejected(attribute):
+    with pytest.raises(MermaidError, match="unsafe SVG references|unsafe SVG presentation"):
+        sanitize_svg(f'<svg><path d="M 0 0" {attribute}="url(https://example.invalid/pattern)" /></svg>', 1000)
+
+
 def test_css_escaped_url_is_rejected_with_style_element():
     with pytest.raises(MermaidError, match="unsupported"):
         sanitize_svg('<svg><style>.x{fill:u\\72l(https://example.invalid/x)}</style></svg>', 1000)
