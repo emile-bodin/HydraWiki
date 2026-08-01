@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -17,6 +18,31 @@ from .persistence import Database
 
 class WikiGenerationError(RuntimeError):
     pass
+
+
+class GenerationBusyError(WikiGenerationError):
+    """The configured global wiki-generation limit has been reached."""
+
+
+@contextmanager
+def generation_slot(database: Database, slots: int):
+    """Acquire a non-queuing global generation slot shared by API processes."""
+    with database.connection() as connection:
+        slot = None
+        for candidate in range(slots):
+            acquired = connection.execute(
+                "SELECT pg_try_advisory_lock(hashtext('hydrawiki.wiki-generation') + %s) AS acquired",
+                (candidate,),
+            ).fetchone()["acquired"]
+            if acquired:
+                slot = candidate
+                break
+        if slot is None:
+            raise GenerationBusyError("generation concurrency limit reached")
+        try:
+            yield
+        finally:
+            connection.execute("SELECT pg_advisory_unlock(hashtext('hydrawiki.wiki-generation') + %s)", (slot,))
 
 
 class Citation(BaseModel):
@@ -210,6 +236,11 @@ def _prompt(title: str, sources: list[dict]) -> str:
 
 
 def generate_wiki_page(database: Database, settings: Settings, repository_id: UUID, page_path: str, title: str, source_paths: list[str] | None = None) -> WikiGenerationResult:
+    with generation_slot(database, settings.generation_max_concurrency):
+        return _generate_wiki_page(database, settings, repository_id, page_path, title, source_paths)
+
+
+def _generate_wiki_page(database: Database, settings: Settings, repository_id: UUID, page_path: str, title: str, source_paths: list[str] | None = None) -> WikiGenerationResult:
     store = WikiStore(database)
     run_id: UUID | None = None
     try:

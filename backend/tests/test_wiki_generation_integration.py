@@ -1,6 +1,7 @@
 """PostgreSQL lifecycle coverage for cited wiki publication."""
 
 import os
+import threading
 from uuid import uuid4
 
 import pytest
@@ -11,7 +12,7 @@ from hydrawiki.config import Settings
 from hydrawiki.generation import GenerationError, GenerationResult
 from hydrawiki.mermaid import MermaidError, RenderedDiagram
 from hydrawiki.persistence import Database, RepositoryStore
-from hydrawiki.wiki import WikiStore, generate_wiki_page
+from hydrawiki.wiki import GenerationBusyError, WikiStore, generate_wiki_page
 
 
 DATABASE_URL = os.getenv("HYDRAWIKI_TEST_DATABASE_URL")
@@ -141,6 +142,54 @@ def test_generator_failure_is_durable_and_does_not_publish(monkeypatch):
     assert result.status == "failed"
     assert WikiStore(database).get_page(repository["id"], "overview") is None
     assert WikiStore(database).get_run(result.run_id)["error"] == "generation service unavailable"
+
+
+def test_generation_limit_rejects_extra_work_without_creating_a_run(monkeypatch):
+    database, repository, settings = setup_indexed_repository(monkeypatch)
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_generate(_self, _prompt):
+        started.set()
+        assert release.wait(5)
+        return GenerationResult(FakeGenerator.response, "fake-provider-model")
+
+    monkeypatch.setattr(FakeGenerator, "generate", slow_generate)
+    first_result: list = []
+    thread = threading.Thread(target=lambda: first_result.append(generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "first", "First")))
+    thread.start()
+    assert started.wait(5)
+    with pytest.raises(GenerationBusyError, match="generation concurrency limit reached"):
+        generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "second", "Second")
+    release.set()
+    thread.join(timeout=5)
+    assert first_result[0].status == "succeeded"
+    with database.connection() as connection:
+        assert connection.execute("SELECT count(*) AS count FROM generation_runs WHERE repository_id = %s", (repository["id"],)).fetchone()["count"] == 1
+
+
+def test_generation_api_returns_the_bounded_response_when_limit_is_reached(monkeypatch):
+    database, repository, settings = setup_indexed_repository(monkeypatch)
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_generate(_self, _prompt):
+        started.set()
+        assert release.wait(5)
+        return GenerationResult(FakeGenerator.response, "fake-provider-model")
+
+    monkeypatch.setattr(FakeGenerator, "generate", slow_generate)
+    first_result: list = []
+    thread = threading.Thread(target=lambda: first_result.append(generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "first", "First")))
+    thread.start()
+    assert started.wait(5)
+    with TestClient(create_app(settings)) as client:
+        response = client.post(f"/api/repositories/{repository['id']}/pages", json={"path": "second", "title": "Second"})
+    assert response.status_code == 409
+    assert response.json()["detail"] == "generation concurrency limit reached"
+    release.set()
+    thread.join(timeout=5)
+    assert first_result[0].status == "succeeded"
 
 
 def test_persistence_failure_preserves_existing_published_page(monkeypatch):

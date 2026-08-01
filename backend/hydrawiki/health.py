@@ -15,6 +15,7 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     service: str
     checks: dict[str, Literal["ok"]]
+    configuration: dict[str, int] | None = None
 
 
 def liveness(settings: Settings) -> HealthResponse:
@@ -26,4 +27,9 @@ def readiness(settings: Settings) -> HealthResponse:
         status="ok",
         service=settings.app_name,
         checks={"configuration": "ok"},
+        configuration={
+            "embedding_max_concurrency": settings.embedding_max_concurrency,
+            "ingest_max_concurrency": settings.ingest_max_concurrency,
+            "generation_max_concurrency": settings.generation_max_concurrency,
+        },
     )

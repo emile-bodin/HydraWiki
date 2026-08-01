@@ -14,3 +14,8 @@ def test_health_endpoints_do_not_contact_external_ai_services() -> None:
         "checks": {"process": "ok"},
     }
     assert client.get("/health/ready").json()["checks"] == {"configuration": "ok"}
+    assert client.get("/health/ready").json()["configuration"] == {
+        "embedding_max_concurrency": 2,
+        "ingest_max_concurrency": 1,
+        "generation_max_concurrency": 1,
+    }

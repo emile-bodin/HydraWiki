@@ -32,18 +32,24 @@ def test_workload_limits_use_typed_defaults() -> None:
     assert settings.max_repository_size_bytes == 1024 * 1024 * 1024
     assert settings.max_source_files == 25_000
     assert settings.embedding_max_concurrency == 2
+    assert settings.ingest_max_concurrency == 1
+    assert settings.generation_max_concurrency == 1
 
 
 def test_workload_limits_accept_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HYDRAWIKI_MAX_REPOSITORY_SIZE_BYTES", "4096")
     monkeypatch.setenv("HYDRAWIKI_MAX_SOURCE_FILES", "12")
     monkeypatch.setenv("HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY", "1")
+    monkeypatch.setenv("HYDRAWIKI_INGEST_MAX_CONCURRENCY", "2")
+    monkeypatch.setenv("HYDRAWIKI_GENERATION_MAX_CONCURRENCY", "2")
 
     settings = Settings(database_url="postgresql://db:5432/hydrawiki", qdrant_url="http://qdrant:6333")
 
     assert settings.max_repository_size_bytes == 4096
     assert settings.max_source_files == 12
     assert settings.embedding_max_concurrency == 1
+    assert settings.ingest_max_concurrency == 2
+    assert settings.generation_max_concurrency == 2
 
 
 @pytest.mark.parametrize(
@@ -55,6 +61,12 @@ def test_workload_limits_accept_environment_overrides(monkeypatch: pytest.Monkey
         ("HYDRAWIKI_MAX_SOURCE_FILES", "", "max_source_files"),
         ("HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY", "3", "embedding_max_concurrency"),
         ("HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY", "", "embedding_max_concurrency"),
+        ("HYDRAWIKI_INGEST_MAX_CONCURRENCY", "0", "ingest_max_concurrency"),
+        ("HYDRAWIKI_INGEST_MAX_CONCURRENCY", "3", "ingest_max_concurrency"),
+        ("HYDRAWIKI_INGEST_MAX_CONCURRENCY", "", "ingest_max_concurrency"),
+        ("HYDRAWIKI_GENERATION_MAX_CONCURRENCY", "0", "generation_max_concurrency"),
+        ("HYDRAWIKI_GENERATION_MAX_CONCURRENCY", "3", "generation_max_concurrency"),
+        ("HYDRAWIKI_GENERATION_MAX_CONCURRENCY", "", "generation_max_concurrency"),
     ],
 )
 def test_invalid_workload_limit_environment_values_fail_validation(monkeypatch: pytest.MonkeyPatch, variable: str, value: str, field: str) -> None:
