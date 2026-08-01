@@ -38,3 +38,11 @@ class QdrantVectorStore:
     def delete(self, vector_ids: list[str]) -> None:
         if vector_ids:
             self._request("POST", f"/collections/{self.collection}/points/delete", json={"points": vector_ids})
+
+    def set_payload(self, vector_ids: list[str], payload: dict) -> None:
+        if vector_ids:
+            self._request(
+                "POST",
+                f"/collections/{self.collection}/points/payload",
+                json={"points": vector_ids, "payload": payload, "wait": True},
+            )
