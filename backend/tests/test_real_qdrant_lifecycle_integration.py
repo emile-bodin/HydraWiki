@@ -35,7 +35,7 @@ def test_add_progress_cited_page_delete_removes_real_vectors_and_metadata(tmp_pa
         qdrant_url=QDRANT_URL,
         local_repositories_root=str(source_root),
         workspace_root=str(workspace_root),
-        generation_url="http://fake-generation:4000/v1",
+        generation_url="http://fake-generation:4000/v1/chat/completions",
         generation_model="fixture-model",
     )
 
