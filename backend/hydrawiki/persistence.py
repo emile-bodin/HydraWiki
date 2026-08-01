@@ -36,6 +36,22 @@ class Database:
                 connection.execute(migration.read_text())
                 connection.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (migration.name,))
 
+    def verify_schema_compatible(self) -> None:
+        """Fail closed when a restored database is not this release's complete schema."""
+        expected = {item.name for item in files("hydrawiki.migrations").iterdir() if item.name.endswith(".sql")}
+        required_tables = {"repositories", "manifest_runs", "source_files", "content_cache", "chunks", "generation_runs", "generation_artifacts", "generation_diagrams", "wiki_pages", "wiki_page_sources", "repository_deletion_receipts"}
+        with self.connection() as connection:
+            migration_table = connection.execute("SELECT to_regclass('public.schema_migrations') AS name").fetchone()["name"]
+            if migration_table is None:
+                raise RuntimeError("database restore is missing schema migration history")
+            applied = {row["version"] for row in connection.execute("SELECT version FROM schema_migrations")}
+            if applied != expected:
+                raise RuntimeError("database restore migrations are incompatible with this HydraWiki release")
+            actual = {row["table_name"] for row in connection.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")}
+            missing = required_tables - actual
+            if missing:
+                raise RuntimeError("database restore is incomplete: missing " + ", ".join(sorted(missing)))
+
 
 class RepositoryStore:
     def __init__(self, database: Database):
@@ -123,6 +139,11 @@ class RepositoryStore:
                 "DELETE FROM content_cache WHERE id NOT IN (SELECT content_cache_id FROM source_files) AND id NOT IN (SELECT content_cache_id FROM manifest_entries WHERE content_cache_id IS NOT NULL)"
             )
             return receipt
+
+    def vector_ids(self, repository_id: UUID) -> list[str]:
+        self.database.migrate()
+        with self.database.connection() as connection:
+            return [row["vector_id"] for row in connection.execute("SELECT vector_id FROM chunks WHERE repository_id = %s", (repository_id,))]
 
     def list_manifest_runs(self, repository_id: UUID) -> list[dict]:
         self.database.migrate()

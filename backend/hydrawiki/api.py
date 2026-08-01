@@ -16,6 +16,7 @@ from .manifest import ManifestBusyError, ManifestStore, run_manifest
 from .persistence import Database, RepositoryStore
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter, SourceValidationError
 from .wiki import WikiStore, generate_wiki_page
+from .vectors import QdrantVectorStore
 
 
 class RepositoryRegistration(BaseModel):
@@ -123,6 +124,9 @@ def store_for(settings: Settings) -> RepositoryStore:
 async def lifespan(_: FastAPI):
     if getattr(_.state, "settings", None) is None:
         _.state.settings = validate_settings()
+    database = Database(str(_.state.settings.database_url))
+    database.migrate()
+    database.verify_schema_compatible()
     yield
 
 
@@ -281,6 +285,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="repository not found")
         workspace = Path(current.workspace_root).resolve() / str(repository_id)
         try:
+            QdrantVectorStore(str(current.qdrant_url)).delete(store.vector_ids(repository_id))
             if workspace.is_symlink():
                 raise RuntimeError("repository workspace must not be a symlink")
             if workspace.exists():
