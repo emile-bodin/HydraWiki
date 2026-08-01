@@ -11,15 +11,18 @@ The named `postgres-data`, `qdrant-data`, and `workspace-data` volumes are the d
 Stop writers first so the PostgreSQL dump and Qdrant snapshot describe the same application point. Record the image/tag, Compose file revision, `docker compose config`, and the migration list with the backup.
 
 ```bash
-mkdir -p backups/$(date +%F)
-docker compose exec -T postgres pg_dump -U hydrawiki -d hydrawiki --format=custom > backups/$(date +%F)/hydrawiki.pg.dump
-docker compose run --rm --no-deps api python -c 'import httpx; print(httpx.post("http://qdrant:6333/collections/hydrawiki/snapshots").text)' > backups/$(date +%F)/qdrant-snapshot.json
-# Copy the snapshot named in qdrant-snapshot.json from /qdrant/snapshots/hydrawiki/.
-docker compose cp qdrant:/qdrant/snapshots/hydrawiki/SNAPSHOT_NAME backups/$(date +%F)/qdrant.snapshot
-docker run --rm -v hydrawiki_workspace-data:/source:ro -v "$PWD/backups/$(date +%F):/backup alpine tar -C /source -czf /backup/workspace-data.tar.gz .
+set -euo pipefail
+backup_dir="backups/$(date +%F)"
+mkdir -p "$backup_dir"
+docker compose exec -T postgres pg_dump -U hydrawiki -d hydrawiki --format=custom > "$backup_dir/hydrawiki.pg.dump"
+docker compose run --rm --no-deps api python -c 'import httpx; response = httpx.post("http://qdrant:6333/collections/hydrawiki/snapshots"); response.raise_for_status(); print(response.text)' > "$backup_dir/qdrant-snapshot.json"
+snapshot_name="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["result"]["name"])' "$backup_dir/qdrant-snapshot.json")"
+docker compose run --rm --no-deps api python -c 'import httpx, sys; response = httpx.get(f"http://qdrant:6333/collections/hydrawiki/snapshots/{sys.argv[1]}"); response.raise_for_status(); sys.stdout.buffer.write(response.content)' "$snapshot_name" > "$backup_dir/qdrant.snapshot"
+test -s "$backup_dir/qdrant.snapshot"
+docker run --rm -v hydrawiki_workspace-data:/source:ro -v "$PWD/$backup_dir:/backup" alpine tar -C /source -czf /backup/workspace-data.tar.gz .
 ```
 
-Stop if any command fails; a PostgreSQL dump alone is not a complete backup when vectors or managed workspaces are required.
+The `test -s` check is the Qdrant snapshot validation step: it uses the name returned by the create-snapshot API response and passes only after the download API has retrieved a non-empty artifact. Stop if any command fails; a PostgreSQL dump alone is not a complete backup when vectors or managed workspaces are required.
 
 ## Restore and compatibility gate
 
