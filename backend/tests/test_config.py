@@ -50,8 +50,11 @@ def test_workload_limits_accept_environment_overrides(monkeypatch: pytest.Monkey
     ("variable", "value", "field"),
     [
         ("HYDRAWIKI_MAX_REPOSITORY_SIZE_BYTES", "0", "max_repository_size_bytes"),
+        ("HYDRAWIKI_MAX_REPOSITORY_SIZE_BYTES", "", "max_repository_size_bytes"),
         ("HYDRAWIKI_MAX_SOURCE_FILES", "0", "max_source_files"),
+        ("HYDRAWIKI_MAX_SOURCE_FILES", "", "max_source_files"),
         ("HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY", "3", "embedding_max_concurrency"),
+        ("HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY", "", "embedding_max_concurrency"),
     ],
 )
 def test_invalid_workload_limit_environment_values_fail_validation(monkeypatch: pytest.MonkeyPatch, variable: str, value: str, field: str) -> None:
