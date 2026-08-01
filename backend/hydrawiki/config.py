@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535)
     database_url: AnyUrl
     qdrant_url: AnyHttpUrl
+    ollama_url: AnyHttpUrl = "http://ollama:11434"
+    embedding_model: str = Field(default="nomic-embed-text:latest", min_length=1)
+    embedding_index_version: str = Field(default="embedding-v1", min_length=1)
+    embedding_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    embedding_max_concurrency: int = Field(default=2, ge=1, le=2)
+    chunker_version: str = Field(default="line-v1", min_length=1)
+    chunk_max_lines: int = Field(default=80, gt=0, le=1000)
     local_repositories_root: str = "/repositories"
     workspace_root: str = "/var/lib/hydrawiki/workspaces"
     max_repository_size_bytes: int = Field(default=1024 * 1024 * 1024, gt=0)

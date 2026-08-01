@@ -12,6 +12,9 @@ services:
     environment:
       HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
       HYDRAWIKI_QDRANT_URL: "${HYDRAWIKI_QDRANT_URL:-http://qdrant:6333}"
+      HYDRAWIKI_OLLAMA_URL: "${HYDRAWIKI_OLLAMA_URL:-http://ollama:11434}"
+      HYDRAWIKI_EMBEDDING_MODEL: "${HYDRAWIKI_EMBEDDING_MODEL:-nomic-embed-text:latest}"
+      HYDRAWIKI_EMBEDDING_INDEX_VERSION: "${HYDRAWIKI_EMBEDDING_INDEX_VERSION:-embedding-v1}"
       HYDRAWIKI_LOCAL_REPOSITORIES_ROOT: /repositories
       HYDRAWIKI_WORKSPACE_ROOT: /var/lib/hydrawiki/workspaces
     volumes:
@@ -36,6 +39,9 @@ services:
     environment:
       HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
       HYDRAWIKI_QDRANT_URL: "${HYDRAWIKI_QDRANT_URL:-http://qdrant:6333}"
+      HYDRAWIKI_OLLAMA_URL: "${HYDRAWIKI_OLLAMA_URL:-http://ollama:11434}"
+      HYDRAWIKI_EMBEDDING_MODEL: "${HYDRAWIKI_EMBEDDING_MODEL:-nomic-embed-text:latest}"
+      HYDRAWIKI_EMBEDDING_INDEX_VERSION: "${HYDRAWIKI_EMBEDDING_INDEX_VERSION:-embedding-v1}"
       HYDRAWIKI_LOCAL_REPOSITORIES_ROOT: /repositories
       HYDRAWIKI_WORKSPACE_ROOT: /var/lib/hydrawiki/workspaces
     depends_on:

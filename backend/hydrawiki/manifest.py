@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from .config import Settings
 from .persistence import Database
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter
+from .indexing import index_manifest
 
 PARSER_VERSION = "text-v1"
 ELIGIBLE_SUFFIXES = frozenset(
@@ -213,7 +214,6 @@ class ManifestStore:
                     (run_id, path, item.content_sha256 if item else None, item.byte_size if item else None, kind),
                 )
                 if kind == "missing":
-                    connection.execute("DELETE FROM source_files WHERE repository_id = %s AND path = %s", (repository_id, path))
                     continue
                 cache = connection.execute(
                     "SELECT id FROM content_cache WHERE content_sha256 = %s AND parser_version = %s",
@@ -277,6 +277,7 @@ def run_manifest(database: Database, settings: Settings, repository: dict) -> Ma
                 raise ManifestError("repository size limit exceeded")
             files = discover_eligible_files(root, settings)
             counts = store.apply_success(repository["id"], run_id, files)
+            index_manifest(database, settings, repository["id"], run_id)
             return ManifestResult(run_id, "succeeded", counts)
         except Exception as exc:
             store.fail(run_id, str(exc))
