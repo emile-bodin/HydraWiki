@@ -15,7 +15,8 @@ def execute_manifest(database: Database, settings, repository: dict) -> Manifest
 
 def run() -> None:
     settings = validate_settings()
-    Database(str(settings.database_url)).migrate()
+    database = Database(str(settings.database_url))
+    database.verify_schema_compatible()
     while True:
         time.sleep(60)
 
