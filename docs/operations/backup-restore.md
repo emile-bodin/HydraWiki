@@ -2,64 +2,82 @@
 
 ## Scope and persistent data
 
-PostgreSQL is authoritative for repositories, lifecycle/deletion receipts, manifest runs and entries, indexed source content/cache, chunks, index metadata, generation runs/artifacts/diagrams, wiki pages, citations, and durable errors. Qdrant is derived but persistent and stores the chunk vectors. The Compose `workspace-data` volume holds managed public-checkout and manifest workspace data. Local repositories are host-owned read-only inputs and are not HydraWiki backup data. LiteLLM and Ollama are external services and are neither backed up nor called by these checks.
+PostgreSQL is authoritative for repositories, lifecycle/deletion receipts, manifests, chunks, index metadata, generation artifacts, wiki pages, citations, and durable errors. Qdrant stores derived vectors. The Compose `workspace-data` volume holds managed workspaces. Local repositories are host-owned inputs and are not HydraWiki backup data. LiteLLM and Ollama are external services and are not called by these checks.
 
-The named `postgres-data`, `qdrant-data`, and `workspace-data` volumes are the durable Compose state. Their capacity, host filesystem ownership, Docker-volume driver, and backup retention are deployment decisions; this repository does not claim or impose CPU/memory limits or a host backup policy.
+## Consistent backup
 
-## Backup
-
-Stop writers first so the PostgreSQL dump and Qdrant snapshot describe the same application point. Record the image/tag, Compose file revision, `docker compose config`, and the migration list with the backup.
+Run this only for the explicitly selected Compose project. It stops the only writers (`api` and `worker`) before taking the PostgreSQL dump and Qdrant snapshot, and starts them again only after all artifacts and provenance files have been written. The project name is required rather than inferred.
 
 ```bash
 set -euo pipefail
-backup_dir="backups/$(date +%F)"
+project="${HYDRAWIKI_COMPOSE_PROJECT:?set the selected Compose project}"
+backup_dir="backups/$(date -u +%Y%m%dT%H%M%SZ)"
+compose=(docker compose -p "$project")
 mkdir -p "$backup_dir"
-docker compose exec -T postgres pg_dump -U hydrawiki -d hydrawiki --format=custom > "$backup_dir/hydrawiki.pg.dump"
-docker compose run --rm --no-deps api python -c 'import httpx; response = httpx.post("http://qdrant:6333/collections/hydrawiki/snapshots"); response.raise_for_status(); print(response.text)' > "$backup_dir/qdrant-snapshot.json"
-snapshot_name="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["result"]["name"])' "$backup_dir/qdrant-snapshot.json")"
-docker compose run --rm --no-deps api python -c 'import httpx, sys; response = httpx.get(f"http://qdrant:6333/collections/hydrawiki/snapshots/{sys.argv[1]}"); response.raise_for_status(); sys.stdout.buffer.write(response.content)' "$snapshot_name" > "$backup_dir/qdrant.snapshot"
+"${compose[@]}" stop api worker
+trap '"${compose[@]}" up -d api worker' EXIT
+date -u +%FT%TZ > "$backup_dir/backup-timestamp.txt"
+sha256sum docker-compose.yml > "$backup_dir/compose.sha256"
+"${compose[@]}" config --images | sort > "$backup_dir/images.txt"
+"${compose[@]}" exec -T postgres psql -U hydrawiki -d hydrawiki -At -c 'SELECT version FROM schema_migrations ORDER BY version' > "$backup_dir/schema-migrations.txt"
+"${compose[@]}" exec -T postgres pg_dump -U hydrawiki -d hydrawiki --format=custom > "$backup_dir/hydrawiki.pg.dump"
+"${compose[@]}" run --rm --no-deps api python -c 'import httpx; r=httpx.post("http://qdrant:6333/collections/hydrawiki/snapshots"); r.raise_for_status(); print(r.json()["result"]["name"])' > "$backup_dir/qdrant-snapshot-name.txt"
+snapshot_name="$(cat "$backup_dir/qdrant-snapshot-name.txt")"
+"${compose[@]}" run --rm --no-deps api python -c 'import httpx,sys; r=httpx.get(f"http://qdrant:6333/collections/hydrawiki/snapshots/{sys.argv[1]}"); r.raise_for_status(); sys.stdout.buffer.write(r.content)' "$snapshot_name" > "$backup_dir/qdrant.snapshot"
 test -s "$backup_dir/qdrant.snapshot"
-docker run --rm -v hydrawiki_workspace-data:/source:ro -v "$PWD/$backup_dir:/backup" alpine tar -C /source -czf /backup/workspace-data.tar.gz .
+"${compose[@]}" run --rm --no-deps -T api sh -ec 'tar -C /var/lib/hydrawiki/workspaces -czf /tmp/workspace-data.tar.gz . && cat /tmp/workspace-data.tar.gz' > "$backup_dir/workspace-data.tar.gz"
+test -s "$backup_dir/workspace-data.tar.gz"
 ```
 
-The `test -s` check is the Qdrant snapshot validation step: it uses the name returned by the create-snapshot API response and passes only after the download API has retrieved a non-empty artifact. Stop if any command fails; a PostgreSQL dump alone is not a complete backup when vectors or managed workspaces are required.
+The provenance files contain no environment values or credentials: the Compose-file digest, resolved image identities, migration list, and UTC backup timestamp identify the input without copying secrets.
 
-## Restore and compatibility gate
+## Isolated restore and compatibility gate
 
-Restore into an isolated Compose project with empty named volumes. Do not point this at production volumes.
+Restore only into a newly created disposable project. This command refuses any project name not beginning with `hydrawiki-restore-`, derives the volume names from that project, and refuses to unpack into a non-empty workspace volume. It never references a production or unqualified Docker volume.
 
 ```bash
-docker compose up -d postgres qdrant
-cat backups/DATE/hydrawiki.pg.dump | docker compose exec -T postgres pg_restore -U hydrawiki -d hydrawiki --clean --if-exists
-docker compose run --rm --no-deps -T api sh -c 'cat >/tmp/hydrawiki.snapshot && python -c "import httpx; print(httpx.post(\"http://qdrant:6333/collections/hydrawiki/snapshots/upload\", files={\"snapshot\": open(\"/tmp/hydrawiki.snapshot\", \"rb\")}).text)"' < backups/DATE/qdrant.snapshot
-docker run --rm -v hydrawiki_workspace-data:/target \
-  -v "$PWD/backups/DATE:/backup:ro" \
-  alpine sh -c 'rm -rf /target/* && tar -C /target -xzf /backup/workspace-data.tar.gz'
-docker compose run --rm api python -m hydrawiki.operational verify
+set -euo pipefail
+project="hydrawiki-restore-$(date -u +%Y%m%d%H%M%S)"
+case "$project" in hydrawiki-restore-*) ;; *) exit 64 ;; esac
+export HYDRAWIKI_API_PORT=0
+backup_dir="${1:?pass the backup directory}"
+compose=(docker compose -p "$project")
+workspace_volume="${project}_workspace-data"
+cleanup() { "${compose[@]}" down --volumes --remove-orphans; }
+trap cleanup EXIT
+test -s "$backup_dir/hydrawiki.pg.dump"
+test -s "$backup_dir/qdrant.snapshot"
+test -s "$backup_dir/workspace-data.tar.gz"
+test -s "$backup_dir/schema-migrations.txt"
+test -s "$backup_dir/compose.sha256"
+sha256sum -c "$backup_dir/compose.sha256"
+"${compose[@]}" up -d --wait postgres qdrant
+cat "$backup_dir/hydrawiki.pg.dump" | "${compose[@]}" exec -T postgres pg_restore -U hydrawiki -d hydrawiki --clean --if-exists
+"${compose[@]}" run --rm --no-deps -T api sh -ec 'cat >/tmp/hydrawiki.snapshot && python -c "import httpx,sys; r=httpx.post(\"http://qdrant:6333/collections/hydrawiki/snapshots/upload\", files={\"snapshot\": open(\"/tmp/hydrawiki.snapshot\", \"rb\")}); r.raise_for_status(); body=r.json(); sys.exit(0 if body.get(\"status\") == \"ok\" and body.get(\"result\") else 1)"' < "$backup_dir/qdrant.snapshot"
+"${compose[@]}" exec -T postgres psql -U hydrawiki -d hydrawiki -At -c 'SELECT version FROM schema_migrations ORDER BY version' | diff -u "$backup_dir/schema-migrations.txt" -
+"${compose[@]}" run --rm api python -m hydrawiki.operational verify
+docker volume inspect "$workspace_volume" >/dev/null
+docker run --rm -v "$workspace_volume:/target" -v "$backup_dir:/backup:ro" alpine sh -ec 'test -z "$(find /target -mindepth 1 -maxdepth 1 -print -quit)"; tar -C /target -xzf /backup/workspace-data.tar.gz'
+"${compose[@]}" up -d api worker
+"${compose[@]}" ps
 ```
 
-The final command is mandatory before starting API/worker normally. It verifies before any migration that the migration history is exactly the release migration set and that every lifecycle/index/wiki/deletion table exists. Missing, incompatible, or incomplete restores fail non-zero and must be repaired or restored again; do not run migrations as a substitute for restore verification. The normal `docker compose up` path does not run migrations. Fresh deployment or intentional upgrades must explicitly run the profile-gated bootstrap step after PostgreSQL is healthy:
+The Qdrant upload raises on transport or HTTP failure and exits non-zero unless its JSON response explicitly reports a successful result. The migration-list comparison and `hydrawiki.operational verify` run before API or worker startup; an incompatible or incomplete restore therefore fails closed.
+
+## Required local evidence
+
+Run PostgreSQL integration tests in the disposable Compose project, not with an unset environment variable (which would skip them):
 
 ```bash
-docker compose --profile bootstrap run --rm schema
+HYDRAWIKI_TEST_DATABASE_URL=postgresql://hydrawiki:password@postgres:5432/hydrawiki \
+  docker compose -p "$project" run --rm --no-deps -v "$PWD/backend:/work:ro" api \
+  sh -ec 'pip install --quiet pytest && cd /work && python -m pytest tests/test_operational_integration.py tests/test_api_lifecycle_integration.py tests/test_wiki_generation_integration.py'
 ```
 
-## Restart and end-to-end evidence
+The tests cover persisted lifecycle/index data across a new store instance, cited wiki publication, and deletion of metadata, chunks, pages, and vector IDs. Run the isolated backup/restore procedure above and retain its terminal output with the change review; do not record secrets or an `.env` file.
 
-Run the PostgreSQL integration suite with an isolated test database and test doubles only:
+Capacity and security review are required before this issue can be completed. Capacity is measured with the chosen fixture and limits recorded by the operator; this repository has no approved fixture size or capacity threshold, so it cannot truthfully define a passing capacity result. The focused security review checks that the project-name guard is present, volumes are derived from the disposable project, no destructive remove command is used, archives are read-only when unpacked, provenance contains no environment values, and Qdrant upload requires both HTTP and result validation.
 
-```bash
-export HYDRAWIKI_TEST_DATABASE_URL=postgresql://hydrawiki:password@localhost:5432/hydrawiki_test
-backend/.venv/bin/python -m pytest backend/tests/test_operational_integration.py backend/tests/test_api_lifecycle_integration.py backend/tests/test_wiki_generation_integration.py
-```
+## Capacity decision record
 
-Expected evidence is: repository registration, durable manifest progress and indexed source, cited published page, a new application/store instance reading the same data, and deletion leaving no repository metadata, chunks, pages, or vector IDs. The API deletion path removes Qdrant IDs before its relational cascade; a vector-delete failure yields `delete_failed`, not a false success.
-
-For an actual Compose restart, use an isolated project and run the same flow, then:
-
-```bash
-docker compose restart api worker postgres qdrant
-docker compose ps
-```
-
-Expect healthy PostgreSQL/Qdrant and the operator API to return the pre-restart repository/source/page state. Stop and investigate if a container restarts without its named volume, a healthcheck fails, or ownership prevents API/worker access to `workspace-data`.
+HYDWIK-9 and the approved implementation plan (reviewed 2026-08-01) require capacity testing but do not define an approved fixture or dataset, workload, metric, or pass/fail threshold. Without all four inputs, a local run would not be a meaningful capacity result and must not be reported as passing. HYDWIK-9 remains In Progress pending an owner decision that supplies those inputs.

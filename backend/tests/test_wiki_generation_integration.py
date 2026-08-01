@@ -183,4 +183,4 @@ def test_mermaid_failure_is_durable_and_preserves_prior_publication(monkeypatch)
     assert failed.status == "failed"
     assert WikiStore(database).get_page(repository["id"], "overview")["generation_run_id"] == first.run_id
     run = WikiStore(database).get_run(failed.run_id)
-    assert run["diagrams"] == [{"ordinal": 0, "source": "flowchart TD\\nA-->B", "status": "failed", "svg": None, "error": "Mermaid source failed server-side validation"}]
+    assert run["diagrams"] == [{"ordinal": 0, "source": "flowchart TD\nA-->B", "status": "failed", "svg": None, "error": "Mermaid source failed server-side validation"}]
