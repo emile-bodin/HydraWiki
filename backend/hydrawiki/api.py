@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from .config import Settings, validate_settings
 from .health import HealthResponse, liveness, readiness
-from .manifest import ManifestStore, run_manifest
+from .manifest import ManifestBusyError, ManifestStore, run_manifest
 from .persistence import Database, RepositoryStore
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter, SourceValidationError
 
@@ -118,7 +118,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         repository = store.get(repository_id)
         if repository is None:
             raise HTTPException(status_code=404, detail="repository not found")
-        result = run_manifest(store.database, current, repository)
+        try:
+            result = run_manifest(store.database, current, repository)
+        except ManifestBusyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         row = ManifestStore(store.database).get(result.run_id)
         assert row is not None
         return ManifestRunResponse.model_validate(row)

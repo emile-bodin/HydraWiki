@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from hydrawiki.config import Settings
-from hydrawiki.manifest import ManifestError, _public_checkout, classify, discover_eligible_files, normalize_relative_path, sha256_content
+from hydrawiki.manifest import ManifestError, _public_checkout, classify, discover_eligible_files, normalize_relative_path, repository_size_bytes, sha256_content
 from hydrawiki.sources import PublicGitRepositoryAdapter
 
 
@@ -55,6 +55,15 @@ def test_limits_fail_before_any_delta_can_be_applied(tmp_path: Path) -> None:
     (tmp_path / "large.py").write_text("12345")
     with pytest.raises(ManifestError, match="source-file size"):
         discover_eligible_files(tmp_path, settings(max_source_file_size_bytes=4))
+
+
+def test_repository_size_counts_excluded_directories(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "pack.bin").write_bytes(b"12345")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "package.bin").write_bytes(b"123456")
+    assert repository_size_bytes(tmp_path) == 11
+    assert repository_size_bytes(tmp_path) > 10
 
 
 def test_public_git_checkout_uses_validated_url_and_ref_without_network(monkeypatch, tmp_path: Path) -> None:

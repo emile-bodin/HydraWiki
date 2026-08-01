@@ -27,6 +27,10 @@ class ManifestError(RuntimeError):
     """A source scan could not produce a complete manifest."""
 
 
+class ManifestBusyError(ManifestError):
+    """Another process currently owns the single-ingest lease."""
+
+
 @dataclass(frozen=True)
 class ManifestFile:
     path: str
@@ -56,16 +60,42 @@ def sha256_content(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def repository_size_bytes(root: Path) -> int:
+    """Count every regular source file, including excluded/non-indexable files."""
+
+    if root.is_symlink() or not root.is_dir():
+        raise ManifestError("source root is not a safe readable directory")
+    total = 0
+
+    def onerror(error: OSError) -> None:
+        raise ManifestError(f"unable to inspect source directory: {error.filename or 'unknown'}") from error
+
+    for current, directories, names in os.walk(root, topdown=True, followlinks=False, onerror=onerror):
+        directories[:] = sorted(name for name in directories if not (Path(current) / name).is_symlink())
+        for name in sorted(names):
+            candidate = Path(current) / name
+            if candidate.is_symlink():
+                continue
+            try:
+                if candidate.is_file():
+                    total += candidate.stat().st_size
+            except OSError as exc:
+                raise ManifestError(f"unable to inspect source file: {candidate.name}") from exc
+    return total
+
+
 def discover_eligible_files(root: Path, settings: Settings) -> list[ManifestFile]:
     """Discover and read eligible files in deterministic path order."""
 
     if root.is_symlink() or not root.is_dir():
         raise ManifestError("source root is not a safe readable directory")
     root = root.resolve()
-    repository_bytes = 0
     eligible_bytes = 0
     result: list[ManifestFile] = []
-    for current, directories, names in os.walk(root, topdown=True, followlinks=False):
+    def onerror(error: OSError) -> None:
+        raise ManifestError(f"unable to inspect source directory: {error.filename or 'unknown'}") from error
+
+    for current, directories, names in os.walk(root, topdown=True, followlinks=False, onerror=onerror):
         directories[:] = sorted(name for name in directories if name not in IGNORED_DIRECTORIES and not (Path(current) / name).is_symlink())
         for name in sorted(names):
             candidate = Path(current) / name
@@ -73,9 +103,6 @@ def discover_eligible_files(root: Path, settings: Settings) -> list[ManifestFile
                 continue
             try:
                 size = candidate.stat().st_size
-                repository_bytes += size
-                if repository_bytes > settings.max_repository_size_bytes:
-                    raise ManifestError("repository size limit exceeded")
                 if candidate.suffix.lower() not in ELIGIBLE_SUFFIXES:
                     continue
                 if size > settings.max_source_file_size_bytes:
@@ -212,17 +239,47 @@ class ManifestStore:
             return counts
 
 
+class ManifestLease:
+    """A PostgreSQL session lock spanning the complete source scan and apply."""
+
+    def __init__(self, database: Database):
+        self.database = database
+        self.connection = None
+
+    def __enter__(self) -> "ManifestLease":
+        self.connection_context = self.database.connection()
+        self.connection = self.connection_context.__enter__()
+        acquired = self.connection.execute("SELECT pg_try_advisory_lock(hashtext('hydrawiki.manifest-ingest')) AS acquired").fetchone()["acquired"]
+        if not acquired:
+            self.connection_context.__exit__(None, None, None)
+            self.connection = None
+            raise ManifestBusyError("another manifest scan is already running")
+        return self
+
+    def __exit__(self, exception_type, exception, traceback) -> None:
+        # Closing the session releases the advisory lock even after an
+        # unexpected worker exception. Explicit unlock is best-effort only.
+        if self.connection is not None:
+            try:
+                self.connection.execute("SELECT pg_advisory_unlock(hashtext('hydrawiki.manifest-ingest'))")
+            finally:
+                self.connection_context.__exit__(exception_type, exception, traceback)
+
+
 def run_manifest(database: Database, settings: Settings, repository: dict) -> ManifestResult:
-    store = ManifestStore(database)
-    run_id = store.start(repository["id"])
-    source_iter = _scan_path(repository, settings, run_id)
-    try:
-        root = next(source_iter)
-        files = discover_eligible_files(root, settings)
-        counts = store.apply_success(repository["id"], run_id, files)
-        return ManifestResult(run_id, "succeeded", counts)
-    except Exception as exc:
-        store.fail(run_id, str(exc))
-        return ManifestResult(run_id, "failed", {}, str(exc))
-    finally:
-        source_iter.close()
+    with ManifestLease(database):
+        store = ManifestStore(database)
+        run_id = store.start(repository["id"])
+        source_iter = _scan_path(repository, settings, run_id)
+        try:
+            root = next(source_iter)
+            if repository_size_bytes(root) > settings.max_repository_size_bytes:
+                raise ManifestError("repository size limit exceeded")
+            files = discover_eligible_files(root, settings)
+            counts = store.apply_success(repository["id"], run_id, files)
+            return ManifestResult(run_id, "succeeded", counts)
+        except Exception as exc:
+            store.fail(run_id, str(exc))
+            return ManifestResult(run_id, "failed", {}, str(exc))
+        finally:
+            source_iter.close()
