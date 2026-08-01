@@ -1,6 +1,7 @@
 """FastAPI application and Phase-2 repository lifecycle endpoints."""
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from shutil import rmtree
 from typing import Literal
@@ -11,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from .config import Settings, validate_settings
 from .health import HealthResponse, liveness, readiness
+from .manifest import ManifestStore, run_manifest
 from .persistence import Database, RepositoryStore
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter, SourceValidationError
 
@@ -33,6 +35,18 @@ class RepositoryResponse(BaseModel):
     display_name: str
     lifecycle_status: Literal["registered", "deleting", "deleted", "delete_failed"]
     last_error: str | None
+
+
+class ManifestRunResponse(BaseModel):
+    id: UUID
+    repository_id: UUID
+    status: Literal["running", "succeeded", "failed"]
+    parser_version: str
+    file_count: int
+    total_bytes: int
+    error: str | None
+    started_at: datetime
+    completed_at: datetime | None
 
 
 def store_for(settings: Settings) -> RepositoryStore:
@@ -96,6 +110,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if row is None:
             raise HTTPException(status_code=404, detail="repository not found")
         return RepositoryResponse.model_validate(row)
+
+    @app.post("/api/repositories/{repository_id}/sync", response_model=ManifestRunResponse, status_code=status.HTTP_201_CREATED)
+    def sync_repository(repository_id: UUID) -> ManifestRunResponse:
+        current = app.state.settings or validate_settings()
+        store = store_for(current)
+        repository = store.get(repository_id)
+        if repository is None:
+            raise HTTPException(status_code=404, detail="repository not found")
+        result = run_manifest(store.database, current, repository)
+        row = ManifestStore(store.database).get(result.run_id)
+        assert row is not None
+        return ManifestRunResponse.model_validate(row)
+
+    @app.get("/api/ingestion-runs/{run_id}", response_model=ManifestRunResponse)
+    def get_manifest_run(run_id: UUID) -> ManifestRunResponse:
+        current = app.state.settings or validate_settings()
+        row = ManifestStore(Database(str(current.database_url))).get(run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="ingestion run not found")
+        return ManifestRunResponse.model_validate(row)
+
+    @app.get("/api/ingestion-runs/{run_id}/entries")
+    def get_manifest_entries(run_id: UUID) -> list[dict]:
+        current = app.state.settings or validate_settings()
+        store = ManifestStore(Database(str(current.database_url)))
+        if store.get(run_id) is None:
+            raise HTTPException(status_code=404, detail="ingestion run not found")
+        return store.entries(run_id)
 
     @app.delete("/api/repositories/{repository_id}", response_model=RepositoryResponse)
     def delete_repository(repository_id: UUID, response: Response) -> RepositoryResponse:

@@ -3,7 +3,14 @@
 import time
 
 from .config import validate_settings
+from .manifest import ManifestResult, run_manifest
 from .persistence import Database
+
+
+def execute_manifest(database: Database, settings, repository: dict) -> ManifestResult:
+    """Worker boundary shared by the API-triggered and background execution paths."""
+
+    return run_manifest(database, settings, repository)
 
 
 def run() -> None:

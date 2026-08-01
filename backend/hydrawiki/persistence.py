@@ -93,4 +93,7 @@ class RepositoryStore:
                 repository,
             ).fetchone()
             connection.execute("DELETE FROM repositories WHERE id = %s", (repository["id"],))
+            # Cache entries are shared across repositories; only remove entries
+            # that became unreferenced with this repository deletion.
+            connection.execute("DELETE FROM content_cache WHERE id NOT IN (SELECT content_cache_id FROM source_files)")
             return receipt
