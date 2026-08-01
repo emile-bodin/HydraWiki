@@ -21,6 +21,7 @@ _TEXT = re.compile(r"^[\w .,:;()#+/%'\-–]+$", re.UNICODE)
 _TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "marker", "defs", "title", "desc"}
 _COMMON = {"id", "class", "fill", "stroke", "stroke-width", "opacity", "transform", "aria-roledescription", "role"}
 _ATTRS = {"svg": {"width", "height", "viewBox", "xmlns", "aria-labelledby"}, "path": {"d", "marker-end", "marker-start"}, "rect": {"x", "y", "width", "height", "rx", "ry"}, "circle": {"cx", "cy", "r"}, "ellipse": {"cx", "cy", "rx", "ry"}, "line": {"x1", "x2", "y1", "y2"}, "polyline": {"points"}, "polygon": {"points"}, "text": {"x", "y", "text-anchor", "font-family", "font-size"}, "tspan": {"x", "y", "dy"}, "marker": {"markerWidth", "markerHeight", "refX", "refY", "orient", "viewBox"}}
+_ROOT_STYLE_VALUE = re.compile(r"(?:max-width:\s*([0-9]{1,5}(?:\.[0-9]{1,4})?)px|background-color:\s*white)")
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,25 @@ def extract_mermaid_sources(content: str) -> list[str]:
 
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
+
+
+def _validate_root_style(value: str) -> None:
+    """Allow only Mermaid CLI's layout width and opaque white canvas declarations."""
+    declarations = value.split(";")
+    if declarations[-1] == "":
+        declarations.pop()
+    if not declarations or len(declarations) > 2:
+        raise MermaidError("Mermaid renderer produced unsafe root SVG styles")
+    seen: set[str] = set()
+    for declaration in declarations:
+        declaration = declaration.strip()
+        match = _ROOT_STYLE_VALUE.fullmatch(declaration)
+        if match is None:
+            raise MermaidError("Mermaid renderer produced unsafe root SVG styles")
+        property_name = declaration.split(":", 1)[0]
+        if property_name in seen or (match.group(1) is not None and float(match.group(1)) > 10000):
+            raise MermaidError("Mermaid renderer produced unsafe root SVG styles")
+        seen.add(property_name)
 
 
 def sanitize_svg(svg: str, max_bytes: int) -> str:
@@ -55,6 +75,9 @@ def sanitize_svg(svg: str, max_bytes: int) -> str:
             raise MermaidError("Mermaid renderer produced unsupported SVG content")
         for name, value in element.attrib.items():
             local = _local(name)
+            if tag == "svg" and local == "style":
+                _validate_root_style(value)
+                continue
             if local not in _COMMON | _ATTRS.get(tag, set()) or not _TEXT.fullmatch(value):
                 raise MermaidError("Mermaid renderer produced unsafe SVG attributes")
             if local in {"id", "class", "aria-labelledby"} and not _NAME.fullmatch(value):

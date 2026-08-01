@@ -167,7 +167,7 @@ def test_mermaid_failure_is_durable_and_preserves_prior_publication(monkeypatch)
 
     class SafeRenderer:
         def __init__(self, *_args): pass
-        def render(self, source): return RenderedDiagram(source, '<svg xmlns="http://www.w3.org/2000/svg"><text x="1" y="2">safe</text></svg>')
+        def render(self, source): return RenderedDiagram(source, '<svg xmlns="http://www.w3.org/2000/svg" style="max-width: 86.6562px; background-color: white;"><text x="1" y="2">safe</text></svg>')
 
     monkeypatch.setattr("hydrawiki.wiki.MermaidRenderer", SafeRenderer)
     first = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")

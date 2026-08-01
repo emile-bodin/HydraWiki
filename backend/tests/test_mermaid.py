@@ -1,4 +1,5 @@
 import subprocess
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -25,6 +26,19 @@ def test_renderer_publishes_only_validated_safe_svg(monkeypatch):
     assert "<svg" in rendered.svg
 
 
+def test_standard_mermaid_root_style_is_an_inert_safe_subset():
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" style="max-width: 86.6562px; background-color: white;"><text x="1" y="2">safe</text></svg>'
+    assert 'style="max-width: 86.6562px; background-color: white;"' in sanitize_svg(svg, 1000)
+
+
+@pytest.mark.skipif(shutil.which("mmdc") is None, reason="real Mermaid CLI unavailable; run the container validation command documented in the PR")
+def test_real_pinned_mermaid_cli_output_is_safe():
+    renderer = MermaidRenderer("mmdc", 15, 1_000, 2_000_000, user="hydrawiki-renderer")
+    rendered = renderer.render("flowchart TD\nA-->B")
+    assert "<svg" in rendered.svg
+    assert "style=" in rendered.svg
+
+
 @pytest.mark.parametrize("svg", ["<svg><script>alert(1)</script></svg>", '<svg><image href="https://example.invalid/x" /></svg>'])
 def test_unsafe_renderer_svg_is_rejected(svg):
     with pytest.raises(MermaidError, match="unsafe|unsupported"):
@@ -34,6 +48,12 @@ def test_unsafe_renderer_svg_is_rejected(svg):
 def test_css_escaped_url_is_rejected_with_style_element():
     with pytest.raises(MermaidError, match="unsupported"):
         sanitize_svg('<svg><style>.x{fill:u\\72l(https://example.invalid/x)}</style></svg>', 1000)
+
+
+@pytest.mark.parametrize("style", ["color: red", "max-width: url(https://example.invalid/x)", "max-width: u\\72l(https://example.invalid/x)", "background-color: transparent", "max-width: 1px; --x: y"])
+def test_root_style_rejects_unknown_values_and_css_escapes(style):
+    with pytest.raises(MermaidError, match="unsafe root SVG styles"):
+        sanitize_svg(f'<svg style="{style}" />', 1000)
 
 
 def test_timeout_is_a_render_failure(monkeypatch):
