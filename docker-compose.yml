@@ -37,8 +37,6 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-      schema:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
       interval: 10s
@@ -71,8 +69,6 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-      schema:
-        condition: service_completed_successfully
     volumes:
       - "${LOCAL_REPOSITORIES_ROOT:-./repositories}:/repositories:ro"
       - workspace-data:/var/lib/hydrawiki/workspaces
@@ -93,6 +89,7 @@ services:
 
   schema:
     build: ./backend
+    profiles: ["bootstrap"]
     command: ["python", "-m", "hydrawiki.operational", "bootstrap"]
     environment:
       HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"

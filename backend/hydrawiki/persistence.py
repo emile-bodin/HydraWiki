@@ -39,7 +39,7 @@ class Database:
     def verify_schema_compatible(self) -> None:
         """Fail closed when a restored database is not this release's complete schema."""
         expected = {item.name for item in files("hydrawiki.migrations").iterdir() if item.name.endswith(".sql")}
-        required_tables = {"schema_migrations", "repositories", "repository_deletion_receipts", "manifest_runs", "content_cache", "source_files", "manifest_entries", "index_versions", "chunks", "index_replacements", "staged_chunks", "generation_runs", "generation_artifacts", "generation_diagrams", "wiki_pages", "wiki_page_sources"}
+        required_tables = {"schema_migrations", "repositories", "ingestion_runs", "repository_deletion_receipts", "manifest_runs", "content_cache", "source_files", "manifest_entries", "index_versions", "chunks", "index_replacements", "staged_chunks", "generation_runs", "generation_artifacts", "generation_diagrams", "wiki_pages", "wiki_page_sources"}
         with self.connection() as connection:
             migration_table = connection.execute("SELECT to_regclass('public.schema_migrations') AS name").fetchone()["name"]
             if migration_table is None:

@@ -40,17 +40,17 @@ def test_restore_schema_gate_rejects_unknown_migration():
             connection.execute("DELETE FROM schema_migrations WHERE version = '999_incompatible.sql'")
 
 
-def test_restore_schema_gate_rejects_required_table_missing():
+def test_restore_schema_gate_rejects_missing_ingestion_runs_table():
     assert DATABASE_URL
     database = Database(DATABASE_URL)
     database.migrate()
     with database.connection() as connection:
-        connection.execute("DROP TABLE index_versions CASCADE")
+        connection.execute("DROP TABLE ingestion_runs CASCADE")
     try:
-        with pytest.raises(RuntimeError, match="index_versions"):
+        with pytest.raises(RuntimeError, match="ingestion_runs"):
             database.verify_schema_compatible()
     finally:
         with database.connection() as connection:
-            connection.execute("DELETE FROM schema_migrations WHERE version = '003_chunk_vectors.sql'")
-            connection.execute(files("hydrawiki.migrations").joinpath("003_chunk_vectors.sql").read_text())
-            connection.execute("INSERT INTO schema_migrations (version) VALUES ('003_chunk_vectors.sql')")
+            connection.execute("DELETE FROM schema_migrations WHERE version = '001_repository_lifecycle.sql'")
+            connection.execute(files("hydrawiki.migrations").joinpath("001_repository_lifecycle.sql").read_text())
+            connection.execute("INSERT INTO schema_migrations (version) VALUES ('001_repository_lifecycle.sql')")

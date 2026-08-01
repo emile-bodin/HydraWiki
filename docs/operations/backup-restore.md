@@ -33,7 +33,11 @@ docker run --rm -v hydrawiki_workspace-data:/target -v "$PWD/backups/DATE:/backu
 docker compose run --rm api python -m hydrawiki.operational verify
 ```
 
-The final command is mandatory before starting API/worker normally. It verifies before any migration that the migration history is exactly the release migration set and that every lifecycle/index/wiki/deletion table exists. Missing, incompatible, or incomplete restores fail non-zero and must be repaired or restored again; do not run migrations as a substitute for restore verification. Fresh deployment or intentional upgrades use the separate Compose `schema` bootstrap service.
+The final command is mandatory before starting API/worker normally. It verifies before any migration that the migration history is exactly the release migration set and that every lifecycle/index/wiki/deletion table exists. Missing, incompatible, or incomplete restores fail non-zero and must be repaired or restored again; do not run migrations as a substitute for restore verification. The normal `docker compose up` path does not run migrations. Fresh deployment or intentional upgrades must explicitly run the profile-gated bootstrap step after PostgreSQL is healthy:
+
+```bash
+docker compose --profile bootstrap run --rm schema
+```
 
 ## Restart and end-to-end evidence
 
