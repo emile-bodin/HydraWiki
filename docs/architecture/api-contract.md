@@ -34,6 +34,23 @@ copying `.env.example` to an ignored `.env` and replacing its placeholders.
 for deployment. The example file contains placeholders only; never commit real
 credentials or private deployment addresses.
 
+## Workload configuration
+
+The non-secret workload settings below may be set in the installation's ignored
+`.env` file (copied from `.env.example`) or supplied through the Compose
+environment. Compose passes them to the API, which already consumes and
+validates them while processing repository sync requests. The documented
+Compose defaults match the typed backend defaults; invalid values fail during
+application configuration validation.
+
+| Variable | Purpose | Default | Valid value | Affected service |
+|---|---|---:|---|---|
+| `HYDRAWIKI_MAX_REPOSITORY_SIZE_BYTES` | Maximum total on-disk repository size accepted for a sync | `1073741824` bytes (1 GiB) | Positive integer bytes | `api` |
+| `HYDRAWIKI_MAX_SOURCE_FILES` | Maximum eligible source-file count accepted for a sync | `25000` files | Positive integer count | `api` |
+| `HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY` | Maximum concurrent embedding requests during sync indexing | `2` requests | Integer from `1` through `2` | `api` |
+
+Docker CPU and memory limits are outside this issue and are not configured here.
+
 ## Reserved application endpoints
 
 The following endpoint shapes are approved by the implementation plan. They are
