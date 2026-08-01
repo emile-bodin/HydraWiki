@@ -160,11 +160,17 @@ def _index_manifest(database: Database, settings: Settings, repository_id: UUID,
                 ).fetchone()
             if source is None:
                 raise IndexingError(f"source content unavailable for {path}")
-            chunks = chunk_content(source["normalized_content"], settings.chunk_max_lines)
+            chunks = chunk_content(source["normalized_content"], settings.chunk_max_lines, settings.embedding_max_input_characters)
             points = []
             for chunk in chunks:
-                with embedding_slot(database, settings.embedding_max_concurrency):
-                    result = adapter.embed(chunk.text)
+                try:
+                    with embedding_slot(database, settings.embedding_max_concurrency):
+                        result = adapter.embed(chunk.text)
+                except Exception as exc:
+                    raise IndexingError(
+                        f"embedding failed for path={path} chunk={chunk.ordinal} "
+                        f"lines={chunk.line_start}-{chunk.line_end} input_characters={len(chunk.text)}: {exc}"
+                    ) from exc
                 if dimension is None:
                     dimension = len(result.vector)
                 elif dimension != len(result.vector):

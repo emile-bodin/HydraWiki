@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     embedding_timeout_seconds: float = Field(default=30, gt=0, le=300)
     embedding_max_concurrency: int = Field(default=2, ge=1, le=2)
     ingest_max_concurrency: int = Field(default=1, ge=1, le=2)
-    chunker_version: str = Field(default="line-v1", min_length=1)
+    chunker_version: str = Field(default="line-size-v2", min_length=1)
     chunk_max_lines: int = Field(default=80, gt=0, le=1000)
+    embedding_max_input_characters: int = Field(default=4000, gt=0, le=100_000)
     generation_url: AnyHttpUrl | None = None
     generation_model: str | None = Field(default=None, min_length=1)
     generation_api_key: SecretStr | None = None
