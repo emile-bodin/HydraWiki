@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     generation_prompt_version: str = Field(default="wiki-v1", min_length=1)
     generation_max_output_tokens: int = Field(default=8000, gt=0, le=8000)
     generation_max_source_characters: int = Field(default=100_000, gt=0, le=2_000_000)
+    mermaid_renderer_command: str = Field(default="mmdc", min_length=1, max_length=200)
+    mermaid_timeout_seconds: float = Field(default=15, gt=0, le=60)
+    mermaid_max_source_characters: int = Field(default=50_000, gt=0, le=500_000)
+    mermaid_max_svg_bytes: int = Field(default=2_000_000, gt=0, le=10_000_000)
     local_repositories_root: str = "/repositories"
     workspace_root: str = "/var/lib/hydrawiki/workspaces"
     max_repository_size_bytes: int = Field(default=1024 * 1024 * 1024, gt=0)

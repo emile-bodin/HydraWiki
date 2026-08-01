@@ -135,10 +135,13 @@ class RepositoryStore:
     def list_generation_runs(self, repository_id: UUID) -> list[dict]:
         self.database.migrate()
         with self.database.connection() as connection:
-            return list(connection.execute(
+            runs = list(connection.execute(
                 "SELECT * FROM generation_runs WHERE repository_id = %s ORDER BY started_at DESC",
                 (repository_id,),
             ))
+            for run in runs:
+                run["diagrams"] = list(connection.execute("SELECT ordinal, source, status, svg, error FROM generation_diagrams WHERE generation_run_id = %s ORDER BY ordinal", (run["id"],)))
+            return runs
 
     def get_indexed_source(self, repository_id: UUID, path: str) -> dict | None:
         self.database.migrate()

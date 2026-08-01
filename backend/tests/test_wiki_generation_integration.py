@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from hydrawiki.api import create_app
 from hydrawiki.config import Settings
 from hydrawiki.generation import GenerationError, GenerationResult
+from hydrawiki.mermaid import MermaidError, RenderedDiagram
 from hydrawiki.persistence import Database, RepositoryStore
 from hydrawiki.wiki import WikiStore, generate_wiki_page
 
@@ -158,3 +159,28 @@ def test_persistence_failure_preserves_existing_published_page(monkeypatch):
     preserved = WikiStore(database).get_page(repository["id"], "overview")
     assert preserved["content"] == old_page["content"]
     assert WikiStore(database).get_run(failed.run_id)["error"] == "wiki page persistence failed"
+
+
+def test_mermaid_failure_is_durable_and_preserves_prior_publication(monkeypatch):
+    database, repository, settings = setup_indexed_repository(monkeypatch)
+    FakeGenerator.response = '{"content":"# Overview\\n```mermaid\\nflowchart TD\\nA-->B\\n```","citations":[{"path":"app.py","line_start":1,"line_end":3}]}'
+
+    class SafeRenderer:
+        def __init__(self, *_args): pass
+        def render(self, source): return RenderedDiagram(source, '<svg xmlns="http://www.w3.org/2000/svg"><text x="1" y="2">safe</text></svg>')
+
+    monkeypatch.setattr("hydrawiki.wiki.MermaidRenderer", SafeRenderer)
+    first = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    assert first.status == "succeeded"
+    assert WikiStore(database).get_page(repository["id"], "overview")["diagrams"][0]["status"] == "safe"
+
+    class FailingRenderer:
+        def __init__(self, *_args): pass
+        def render(self, _source): raise MermaidError("Mermaid source failed server-side validation")
+
+    monkeypatch.setattr("hydrawiki.wiki.MermaidRenderer", FailingRenderer)
+    failed = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    assert failed.status == "failed"
+    assert WikiStore(database).get_page(repository["id"], "overview")["generation_run_id"] == first.run_id
+    run = WikiStore(database).get_run(failed.run_id)
+    assert run["diagrams"] == [{"ordinal": 0, "source": "flowchart TD\\nA-->B", "status": "failed", "svg": None, "error": "Mermaid source failed server-side validation"}]

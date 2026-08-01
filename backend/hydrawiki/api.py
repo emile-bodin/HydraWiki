@@ -68,6 +68,14 @@ class CitationResponse(BaseModel):
     line_end: int
 
 
+class MermaidDiagramResponse(BaseModel):
+    ordinal: int
+    source: str
+    status: Literal["safe", "failed"]
+    svg: str | None = None
+    error: str | None = None
+
+
 class WikiPageResponse(BaseModel):
     id: UUID
     path: str
@@ -76,6 +84,7 @@ class WikiPageResponse(BaseModel):
     lifecycle_status: Literal["published"]
     generation_run_id: UUID
     citations: list[CitationResponse] = Field(default_factory=list)
+    diagrams: list[MermaidDiagramResponse] = Field(default_factory=list)
 
 
 class WikiPageSummaryResponse(BaseModel):
@@ -97,6 +106,7 @@ class GenerationRunResponse(BaseModel):
     error: str | None
     started_at: datetime
     completed_at: datetime | None
+    diagrams: list[MermaidDiagramResponse] = Field(default_factory=list)
 
 
 class IndexedSourceResponse(BaseModel):

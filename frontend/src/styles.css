@@ -22,3 +22,4 @@ article p { color: #52616b; margin: .4rem 0; }
 .page-link, .citation { display: block; margin: .7rem 0; text-decoration: underline; }
 .citation { display: inline-block; margin-right: 1rem; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f4f7f9; padding: 1rem; border-radius: .4rem; }
+.diagram { display: block; max-width: 100%; background: #fff; }

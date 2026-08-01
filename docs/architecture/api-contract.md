@@ -69,3 +69,7 @@ data for the operator UI:
 
 No Phase-1 endpoint registers repositories, starts ingestion, indexes content,
 calls an AI service, generates wiki content, processes Mermaid, or deletes data.
+
+## Phase 7 Mermaid trust boundary
+
+Mermaid fences are rendered by the local pinned Mermaid CLI before publication, with bounded input and a timeout; this uses no model or network service. The renderer SVG is untrusted until the backend accepts it against HydraWiki's minimal inert SVG vocabulary. Only a `safe` diagram with server-provided SVG is returned for display. A failed diagram stores its source and durable error on the generation run, and cannot replace an existing published page.

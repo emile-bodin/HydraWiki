@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends chromium nodejs npm \
+    && npm install -g @mermaid-js/mermaid-cli@11.12.0 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY pyproject.toml .
 COPY hydrawiki ./hydrawiki
