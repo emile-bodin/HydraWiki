@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, test, vi } from "vitest";
 import { App, citationLabel, runState } from "./main";
 
 const repository = {
@@ -8,6 +8,11 @@ const repository = {
   selected_ref: "main", display_name: "Example", lifecycle_status: "registered", last_error: null,
   last_successful_processing_at: "2026-08-01T10:00:00Z", current_error: null,
 };
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 test("shows durable progress, keeps failed generation separate from published pages, and opens cited indexed source", async () => {
   const fetchMock = vi.fn(async (input: string) => {
@@ -55,4 +60,56 @@ test("formats citations and run states without inventing success", () => {
   expect(runState("running")).toBe("running");
   expect(runState("failed")).toBe("failed");
   expect(runState("succeeded")).toBe("available");
+});
+
+test("registers a Public Git repository and refreshes the registered list", async () => {
+  const createdRepository = {
+    ...repository,
+    id: "repo-2",
+    display_name: "HydraWiki",
+    source_value: "https://github.com/emile-bodin/HydraWiki.git",
+  };
+  let repositories: typeof repository[] = [];
+  const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === "/api/repositories" && !init) return new Response(JSON.stringify(repositories), { status: 200 });
+    if (input === "/api/repositories" && init?.method === "POST") {
+      repositories = [createdRepository];
+      return new Response(JSON.stringify(createdRepository), { status: 201 });
+    }
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  await screen.findByText("No repositories are registered.");
+  fireEvent.change(screen.getByLabelText("Source type"), { target: { value: "public_git" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "HydraWiki" } });
+  fireEvent.change(screen.getByLabelText("HTTPS Git URL"), { target: { value: createdRepository.source_value } });
+  fireEvent.change(screen.getByLabelText("Ref"), { target: { value: "main" } });
+  fireEvent.click(screen.getByRole("button", { name: "Register repository" }));
+
+  await screen.findByRole("button", { name: "HydraWiki" });
+  expect(screen.queryByText("No repositories are registered.")).not.toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith("/api/repositories", expect.objectContaining({ method: "POST" }));
+  expect(screen.getByLabelText("HTTPS Git URL")).toHaveValue("");
+});
+
+test("shows a registration error without a runtime exception", async () => {
+  const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === "/api/repositories" && !init) return new Response(JSON.stringify([]), { status: 200 });
+    if (input === "/api/repositories" && init?.method === "POST") return new Response(JSON.stringify({ detail: "Repository URL is not reachable" }), { status: 422 });
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  await screen.findByText("No repositories are registered.");
+  fireEvent.change(screen.getByLabelText("Source type"), { target: { value: "public_git" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Broken repository" } });
+  fireEvent.change(screen.getByLabelText("HTTPS Git URL"), { target: { value: "https://github.com/example/missing.git" } });
+  fireEvent.change(screen.getByLabelText("Ref"), { target: { value: "main" } });
+  fireEvent.click(screen.getByRole("button", { name: "Register repository" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Repository URL is not reachable");
+  expect(screen.getByRole("button", { name: "Register repository" })).toBeInTheDocument();
 });
