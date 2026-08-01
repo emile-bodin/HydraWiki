@@ -97,6 +97,11 @@ def test_failed_multifile_replacement_preserves_state_and_retry_is_clean(tmp_pat
         FakeVectors.fail_upsert_at = FakeVectors.upsert_count + 2
     failed = run_manifest(Database(DATABASE_URL), settings, repository)
     assert failed.status == "failed"
+    if failure == "embedding":
+        recorded = connection_rows(database, "SELECT error FROM manifest_runs WHERE id = %s", failed.run_id)[0]["error"]
+        assert "embedding failed for path=later.py" in recorded
+        assert "chunk=0" in recorded
+        assert "input_characters=" in recorded
     with database.connection() as connection:
         assert list(connection.execute("SELECT path, content_sha256 FROM source_files WHERE repository_id = %s ORDER BY path", (repository["id"],))) == before_source
         assert list(connection.execute("SELECT path, vector_id FROM chunks WHERE repository_id = %s ORDER BY path", (repository["id"],))) == before_chunks
