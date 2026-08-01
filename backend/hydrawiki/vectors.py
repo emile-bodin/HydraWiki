@@ -24,7 +24,12 @@ class QdrantVectorStore:
 
     def ensure_collection(self, dimension: int) -> None:
         try:
-            self._request("PUT", f"/collections/{self.collection}", json={"vectors": {"size": dimension, "distance": "Cosine"}})
+            self._request(
+                "PUT",
+                f"/collections/{self.collection}",
+                params={"wait": "true"},
+                json={"vectors": {"size": dimension, "distance": "Cosine"}},
+            )
         except VectorStoreError:
             # Existing collections are valid; dimension is checked by Qdrant on upsert.
             try:
@@ -33,16 +38,27 @@ class QdrantVectorStore:
                 raise
 
     def upsert(self, points: list[dict]) -> None:
-        self._request("PUT", f"/collections/{self.collection}/points", json={"points": points})
+        self._request(
+            "PUT",
+            f"/collections/{self.collection}/points",
+            params={"wait": "true"},
+            json={"points": points},
+        )
 
     def delete(self, vector_ids: list[str]) -> None:
         if vector_ids:
-            self._request("POST", f"/collections/{self.collection}/points/delete", json={"points": vector_ids})
+            self._request(
+                "POST",
+                f"/collections/{self.collection}/points/delete",
+                params={"wait": "true"},
+                json={"points": vector_ids},
+            )
 
     def set_payload(self, vector_ids: list[str], payload: dict) -> None:
         if vector_ids:
             self._request(
                 "POST",
                 f"/collections/{self.collection}/points/payload",
-                json={"points": vector_ids, "payload": payload, "wait": True},
+                params={"wait": "true"},
+                json={"points": vector_ids, "payload": payload},
             )
