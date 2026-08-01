@@ -14,6 +14,25 @@ DATABASE_URL = os.getenv("HYDRAWIKI_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="set HYDRAWIKI_TEST_DATABASE_URL for PostgreSQL integration tests")
 
 
+def test_fresh_database_startup_applies_migrations_before_compatibility_verification(tmp_path: Path) -> None:
+    assert DATABASE_URL
+    database = Database(DATABASE_URL)
+    with database.connection() as connection:
+        connection.execute("DROP SCHEMA public CASCADE")
+        connection.execute("CREATE SCHEMA public")
+    settings = Settings(
+        database_url=DATABASE_URL,
+        qdrant_url="http://qdrant:6333",
+        local_repositories_root=str(tmp_path / "repositories"),
+        workspace_root=str(tmp_path / "workspaces"),
+    )
+
+    with TestClient(create_app(settings)):
+        pass
+
+    database.verify_schema_compatible()
+
+
 def test_registration_survives_new_app_and_delete_removes_workspace(tmp_path: Path, monkeypatch) -> None:
     assert DATABASE_URL
     local_root = tmp_path / "repositories"

@@ -40,6 +40,19 @@ def test_restore_schema_gate_rejects_unknown_migration():
             connection.execute("DELETE FROM schema_migrations WHERE version = '999_incompatible.sql'")
 
 
+def test_restore_schema_gate_rejects_missing_migration_history():
+    assert DATABASE_URL
+    database = Database(DATABASE_URL)
+    database.migrate()
+    with database.connection() as connection:
+        connection.execute("DROP TABLE schema_migrations")
+    try:
+        with pytest.raises(RuntimeError, match="missing schema migration history"):
+            database.verify_schema_compatible()
+    finally:
+        database.migrate()
+
+
 def test_restore_schema_gate_rejects_missing_ingestion_runs_table():
     assert DATABASE_URL
     database = Database(DATABASE_URL)
