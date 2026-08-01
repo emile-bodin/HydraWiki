@@ -18,6 +18,26 @@ class IndexingError(RuntimeError):
 
 
 @contextmanager
+def replacement_lease(database: Database, run_id: UUID):
+    """Hold exclusive ownership of an index replacement while it is active."""
+    with database.connection() as connection:
+        acquired = connection.execute(
+            "SELECT pg_try_advisory_lock(hashtext('hydrawiki.index-replacement'), hashtext(%s)) AS acquired",
+            (str(run_id),),
+        ).fetchone()["acquired"]
+        if not acquired:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            connection.execute(
+                "SELECT pg_advisory_unlock(hashtext('hydrawiki.index-replacement'), hashtext(%s))",
+                (str(run_id),),
+            )
+
+
+@contextmanager
 def embedding_slot(database: Database, slots: int = 2, timeout: float = 30):
     """Acquire one of two PostgreSQL advisory-lock slots across all processes."""
     with database.connection() as connection:
@@ -53,23 +73,26 @@ def recover_replacements(database: Database, vectors: QdrantVectorStore) -> None
         replacements = list(connection.execute("SELECT * FROM index_replacements WHERE status <> 'succeeded' ORDER BY created_at"))
     recovery_error = None
     for replacement in replacements:
-        staged = list(replacement["staged_vector_ids"] or [])
-        old = list(replacement["old_vector_ids"] or [])
-        try:
-            if replacement["status"] in ("activating", "retiring") or replacement["promotion_complete"]:
-                vectors.set_payload(staged, {"hydrawiki_state": "active"})
-                vectors.delete(old)
+        with replacement_lease(database, replacement["run_id"]) as acquired:
+            if not acquired:
+                continue
+            staged = list(replacement["staged_vector_ids"] or [])
+            old = list(replacement["old_vector_ids"] or [])
+            try:
+                if replacement["status"] in ("activating", "retiring") or replacement["promotion_complete"]:
+                    vectors.set_payload(staged, {"hydrawiki_state": "active"})
+                    vectors.delete(old)
+                    with database.connection() as connection:
+                        connection.execute("DELETE FROM staged_chunks WHERE replacement_run_id = %s", (replacement["run_id"],))
+                        connection.execute("UPDATE index_replacements SET status = 'succeeded', error = NULL, updated_at = now() WHERE run_id = %s", (replacement["run_id"],))
+                    continue
+                vectors.delete(staged)
                 with database.connection() as connection:
                     connection.execute("DELETE FROM staged_chunks WHERE replacement_run_id = %s", (replacement["run_id"],))
-                    connection.execute("UPDATE index_replacements SET status = 'succeeded', error = NULL, updated_at = now() WHERE run_id = %s", (replacement["run_id"],))
-                continue
-            vectors.delete(staged)
-            with database.connection() as connection:
-                connection.execute("DELETE FROM staged_chunks WHERE replacement_run_id = %s", (replacement["run_id"],))
-                connection.execute("UPDATE index_replacements SET status = 'failed', error = NULL, updated_at = now() WHERE run_id = %s", (replacement["run_id"],))
-        except Exception as exc:
-            _set_run_error(database, replacement["run_id"], "recoverable", str(exc))
-            recovery_error = recovery_error or exc
+                    connection.execute("UPDATE index_replacements SET status = 'failed', error = NULL, updated_at = now() WHERE run_id = %s", (replacement["run_id"],))
+            except Exception as exc:
+                _set_run_error(database, replacement["run_id"], "recoverable", str(exc))
+                recovery_error = recovery_error or exc
     if recovery_error is not None:
         raise IndexingError(f"durable replacement recovery is incomplete: {recovery_error}") from recovery_error
 
@@ -88,6 +111,13 @@ def _cleanup_failed(database: Database, vectors: QdrantVectorStore, run_id: UUID
 
 
 def index_manifest(database: Database, settings: Settings, repository_id: UUID, run_id: UUID) -> None:
+    with replacement_lease(database, run_id) as acquired:
+        if not acquired:
+            raise IndexingError("index replacement is already active")
+        _index_manifest(database, settings, repository_id, run_id)
+
+
+def _index_manifest(database: Database, settings: Settings, repository_id: UUID, run_id: UUID) -> None:
     database.migrate()
     adapter = OllamaEmbeddingAdapter(str(settings.ollama_url), settings.embedding_model, settings.embedding_timeout_seconds)
     vectors = QdrantVectorStore(str(settings.qdrant_url))

@@ -38,10 +38,10 @@ credentials or private deployment addresses.
 
 The non-secret workload settings below may be set in the installation's ignored
 `.env` file (copied from `.env.example`) or supplied through the Compose
-environment. Compose passes them to the API, which already consumes and
-validates them while processing repository sync requests. The documented
-Compose defaults match the typed backend defaults; invalid values fail during
-application configuration validation.
+environment. Compose passes ingest settings to the API and worker, and
+generation settings to the API, which consume and validate them while doing the
+corresponding work. The documented Compose defaults match the typed backend
+defaults; invalid values fail during application configuration validation.
 
 | Variable | Purpose | Default | Valid value | Affected service |
 |---|---|---:|---|---|
