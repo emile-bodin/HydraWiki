@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 
 from .config import Settings
 from .generation import GenerationError, OpenAICompatibleGenerationAdapter
+from .mermaid import MermaidError, MermaidRenderer, extract_mermaid_sources
 from .persistence import Database
 
 
@@ -101,6 +102,20 @@ class WikiStore:
                 (error[:2000], run_id),
             )
 
+    def add_diagram(self, run_id: UUID, ordinal: int, source: str, status: str, svg: str | None = None, error: str | None = None) -> None:
+        with self.database.connection() as connection:
+            connection.execute("INSERT INTO generation_diagrams (id, generation_run_id, ordinal, source, status, svg, error) VALUES (%s, %s, %s, %s, %s, %s, %s)", (uuid4(), run_id, ordinal, source, status, svg, error))
+
+    def validate_mermaid(self, run_id: UUID, content: str, settings: Settings) -> None:
+        renderer = MermaidRenderer(settings.mermaid_renderer_command, settings.mermaid_timeout_seconds, settings.mermaid_max_source_characters, settings.mermaid_max_svg_bytes, settings.mermaid_renderer_user)
+        for ordinal, source in enumerate(extract_mermaid_sources(content)):
+            try:
+                rendered = renderer.render(source)
+            except MermaidError as exc:
+                self.add_diagram(run_id, ordinal, source, "failed", error=str(exc))
+                raise WikiGenerationError(str(exc)) from exc
+            self.add_diagram(run_id, ordinal, source, "safe", svg=rendered.svg)
+
     def validate_citations(self, repository_id: UUID, citations: list[Citation], selection: list[dict]) -> None:
         allowed: dict[str, list[tuple[int, int]]] = {}
         for row in selection:
@@ -164,7 +179,10 @@ class WikiStore:
     def get_run(self, run_id: UUID) -> dict | None:
         self.database.migrate()
         with self.database.connection() as connection:
-            return connection.execute("SELECT * FROM generation_runs WHERE id = %s", (run_id,)).fetchone()
+            run = connection.execute("SELECT * FROM generation_runs WHERE id = %s", (run_id,)).fetchone()
+            if run is not None:
+                run["diagrams"] = list(connection.execute("SELECT ordinal, source, status, svg, error FROM generation_diagrams WHERE generation_run_id = %s ORDER BY ordinal", (run_id,)))
+            return run
 
     def list_pages(self, repository_id: UUID) -> list[dict]:
         self.database.migrate()
@@ -178,6 +196,7 @@ class WikiStore:
             if page is None:
                 return None
             page["citations"] = list(connection.execute("SELECT path, line_start, line_end FROM wiki_page_sources WHERE wiki_page_id = %s ORDER BY path, line_start, line_end", (page["id"],)))
+            page["diagrams"] = list(connection.execute("SELECT ordinal, source, status, svg, error FROM generation_diagrams WHERE generation_run_id = %s ORDER BY ordinal", (page["generation_run_id"],)))
             return page
 
 
@@ -209,6 +228,7 @@ def generate_wiki_page(database: Database, settings: Settings, repository_id: UU
         except (json.JSONDecodeError, ValidationError) as exc:
             raise WikiGenerationError("generation response did not contain a valid cited page") from exc
         store.validate_citations(repository_id, document.citations, sources)
+        store.validate_mermaid(run_id, document.content, settings)
         store.publish(run_id, repository_id, page_path, title, document, generated.model)
         return WikiGenerationResult(run_id, "succeeded")
     except (GenerationError, WikiGenerationError) as exc:

@@ -17,15 +17,15 @@ test("shows durable progress, keeps failed generation separate from published pa
       error: null, started_at: "2026-08-01T10:00:00Z", completed_at: null,
     }]), { status: 200 });
     if (input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify([
-      { id: "generation-failed", page_path: "failed", status: "failed", error: "provider unavailable", started_at: "2026-08-01T10:00:00Z", completed_at: "2026-08-01T10:01:00Z" },
-      { id: "generation-published", page_path: "overview", status: "succeeded", error: null, started_at: "2026-08-01T10:00:00Z", completed_at: "2026-08-01T10:01:00Z" },
+      { id: "generation-failed", page_path: "failed", status: "failed", error: "provider unavailable", started_at: "2026-08-01T10:00:00Z", completed_at: "2026-08-01T10:01:00Z", diagrams: [{ ordinal: 0, source: "flowchart TD\nA-->B", status: "failed", svg: null, error: "invalid syntax" }] },
+      { id: "generation-published", page_path: "overview", status: "succeeded", error: null, started_at: "2026-08-01T10:00:00Z", completed_at: "2026-08-01T10:01:00Z", diagrams: [] },
     ]), { status: 200 });
     if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([
       { path: "overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published" },
     ]), { status: 200 });
     if (input === "/api/repositories/repo-1/pages/overview") return new Response(JSON.stringify({
       id: "page-1", path: "overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published", content: "# Overview",
-      citations: [{ path: "src/app.py", line_start: 4, line_end: 8 }],
+      citations: [{ path: "src/app.py", line_start: 4, line_end: 8 }], diagrams: [{ ordinal: 0, source: "flowchart TD\nA-->B", status: "safe", svg: "<svg><text>safe</text></svg>", error: null }],
     }), { status: 200 });
     if (input === "/api/repositories/repo-1/sources/src%2Fapp.py") return new Response(JSON.stringify({ path: "src/app.py", line_count: 8, content: "print('indexed')" }), { status: 200 });
     return new Response(null, { status: 404 });
@@ -39,9 +39,12 @@ test("shows durable progress, keeps failed generation separate from published pa
   expect(screen.getByText("failed: failed")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Overview published/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /failed published/ })).not.toBeInTheDocument();
+  expect(screen.getByText("Mermaid validation failed: invalid syntax")).toBeInTheDocument();
+  expect(screen.getByText((_, element) => element?.tagName === "PRE" && element.textContent === "flowchart TD\nA-->B")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /Overview published/ }));
   await screen.findByText("# Overview");
+  expect(screen.getByRole("img", { name: "Validated Mermaid diagram" }).getAttribute("src")).toContain("data:image/svg+xml");
   fireEvent.click(screen.getByRole("button", { name: "src/app.py:4–8" }));
   await screen.findByText("print('indexed')");
   expect(fetchMock.mock.calls.map(([path]) => path)).toContain("/api/repositories/repo-1/sources/src%2Fapp.py");

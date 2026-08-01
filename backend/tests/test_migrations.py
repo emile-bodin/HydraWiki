@@ -25,3 +25,10 @@ def test_wiki_generation_migration_persists_pages_artifacts_and_citations() -> N
     assert "CREATE TABLE IF NOT EXISTS generation_artifacts" in migration
     assert "CREATE TABLE IF NOT EXISTS wiki_page_sources" in migration
     assert "line_end >= line_start" in migration
+
+
+def test_mermaid_migration_persists_safe_or_failed_diagrams_only() -> None:
+    migration = files("hydrawiki.migrations").joinpath("006_mermaid_diagrams.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS generation_diagrams" in migration
+    assert "status IN ('safe', 'failed')" in migration
+    assert "svg IS NOT NULL" in migration
