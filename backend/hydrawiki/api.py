@@ -125,6 +125,7 @@ async def lifespan(_: FastAPI):
     if getattr(_.state, "settings", None) is None:
         _.state.settings = validate_settings()
     database = Database(str(_.state.settings.database_url))
+    database.migrate()
     database.verify_schema_compatible()
     yield
 
