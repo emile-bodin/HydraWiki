@@ -107,7 +107,7 @@ class WikiStore:
             connection.execute("INSERT INTO generation_diagrams (id, generation_run_id, ordinal, source, status, svg, error) VALUES (%s, %s, %s, %s, %s, %s, %s)", (uuid4(), run_id, ordinal, source, status, svg, error))
 
     def validate_mermaid(self, run_id: UUID, content: str, settings: Settings) -> None:
-        renderer = MermaidRenderer(settings.mermaid_renderer_command, settings.mermaid_timeout_seconds, settings.mermaid_max_source_characters, settings.mermaid_max_svg_bytes)
+        renderer = MermaidRenderer(settings.mermaid_renderer_command, settings.mermaid_timeout_seconds, settings.mermaid_max_source_characters, settings.mermaid_max_svg_bytes, settings.mermaid_renderer_user)
         for ordinal, source in enumerate(extract_mermaid_sources(content)):
             try:
                 rendered = renderer.render(source)

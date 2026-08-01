@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+import os
+import pwd
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -16,7 +18,7 @@ class MermaidError(RuntimeError):
 _FENCE = re.compile(r"^```mermaid[ \t]*\r?\n(.*?)(?:\r?\n)?```[ \t]*$", re.MULTILINE | re.DOTALL)
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")
 _TEXT = re.compile(r"^[\w .,:;()#+/%'\-–]+$", re.UNICODE)
-_TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "marker", "defs", "title", "desc", "style"}
+_TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "marker", "defs", "title", "desc"}
 _COMMON = {"id", "class", "fill", "stroke", "stroke-width", "opacity", "transform", "aria-roledescription", "role"}
 _ATTRS = {"svg": {"width", "height", "viewBox", "xmlns", "aria-labelledby"}, "path": {"d", "marker-end", "marker-start"}, "rect": {"x", "y", "width", "height", "rx", "ry"}, "circle": {"cx", "cy", "r"}, "ellipse": {"cx", "cy", "rx", "ry"}, "line": {"x1", "x2", "y1", "y2"}, "polyline": {"points"}, "polygon": {"points"}, "text": {"x", "y", "text-anchor", "font-family", "font-size"}, "tspan": {"x", "y", "dy"}, "marker": {"markerWidth", "markerHeight", "refX", "refY", "orient", "viewBox"}}
 
@@ -59,30 +61,40 @@ def sanitize_svg(svg: str, max_bytes: int) -> str:
                 raise MermaidError("Mermaid renderer produced unsafe SVG identifiers")
             if local in {"marker-end", "marker-start"} and not re.fullmatch(r"url\(#[A-Za-z_][A-Za-z0-9_.:-]{0,127}\)", value):
                 raise MermaidError("Mermaid renderer produced unsafe SVG references")
-        if tag == "style" and re.search(r"url\s*\(|@|expression|behavior|binding|<", element.text or "", re.I):
-            raise MermaidError("Mermaid renderer produced unsafe SVG styles")
-        if tag != "style" and element.text and not _TEXT.fullmatch(element.text.strip()):
+        if element.text and not _TEXT.fullmatch(element.text.strip()):
             raise MermaidError("Mermaid renderer produced unsafe SVG text")
     ET.register_namespace("", "http://www.w3.org/2000/svg")
     return ET.tostring(root, encoding="unicode")
 
 
 class MermaidRenderer:
-    def __init__(self, command: str, timeout_seconds: float, max_source_characters: int, max_svg_bytes: int):
+    def __init__(self, command: str, timeout_seconds: float, max_source_characters: int, max_svg_bytes: int, user: str = "hydrawiki-renderer"):
         self.command, self.timeout_seconds = command, timeout_seconds
         self.max_source_characters, self.max_svg_bytes = max_source_characters, max_svg_bytes
+        self.user = user
 
     def render(self, source: str) -> RenderedDiagram:
         if not source.strip() or len(source) > self.max_source_characters:
             raise MermaidError("Mermaid source exceeds the configured limit")
+        try:
+            renderer_user = pwd.getpwnam(self.user)
+        except KeyError as exc:
+            raise MermaidError("Mermaid sandbox user is unavailable") from exc
         with tempfile.TemporaryDirectory(prefix="hydrawiki-mermaid-") as directory:
             root = Path(directory)
+            os.chown(root, renderer_user.pw_uid, renderer_user.pw_gid)
             input_path, output_path, config_path, browser_path = root / "diagram.mmd", root / "diagram.svg", root / "config.json", root / "browser.json"
             input_path.write_text(source, encoding="utf-8")
             config_path.write_text('{"securityLevel":"strict","flowchart":{"htmlLabels":false}}', encoding="utf-8")
-            browser_path.write_text('{"args":["--no-sandbox"]}', encoding="utf-8")
+            browser_path.write_text("{}", encoding="utf-8")
+            for path in (input_path, config_path, browser_path):
+                os.chown(path, renderer_user.pw_uid, renderer_user.pw_gid)
+            def drop_privileges() -> None:
+                os.setgroups([])
+                os.setgid(renderer_user.pw_gid)
+                os.setuid(renderer_user.pw_uid)
             try:
-                subprocess.run([self.command, "--input", str(input_path), "--output", str(output_path), "--outputFormat", "svg", "--configFile", str(config_path), "--puppeteerConfigFile", str(browser_path)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=self.timeout_seconds, cwd=root, env={"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(root), "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/chromium"})
+                subprocess.run([self.command, "--input", str(input_path), "--output", str(output_path), "--outputFormat", "svg", "--configFile", str(config_path), "--puppeteerConfigFile", str(browser_path)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=self.timeout_seconds, cwd=root, env={"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(root), "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/chromium"}, preexec_fn=drop_privileges)
             except subprocess.TimeoutExpired as exc:
                 raise MermaidError("Mermaid rendering timed out") from exc
             except FileNotFoundError as exc:
