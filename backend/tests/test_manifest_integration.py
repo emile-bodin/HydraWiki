@@ -88,6 +88,11 @@ def test_concurrent_manifest_runs_are_serialized_by_postgres(tmp_path: Path, mon
     started = threading.Event()
     release = threading.Event()
     original_discovery = __import__("hydrawiki.manifest", fromlist=["discover_eligible_files"]).discover_eligible_files
+    def complete_indexing(current_database, _settings, _repository_id, run_id):
+        with current_database.connection() as connection:
+            connection.execute("UPDATE manifest_runs SET status = 'succeeded', completed_at = now() WHERE id = %s", (run_id,))
+
+    monkeypatch.setattr("hydrawiki.manifest.index_manifest", complete_indexing)
 
     def slow_discovery(source_root, current_settings):
         started.set()
@@ -111,6 +116,55 @@ def test_concurrent_manifest_runs_are_serialized_by_postgres(tmp_path: Path, mon
     with database.connection() as connection:
         statuses = list(connection.execute("SELECT status FROM manifest_runs WHERE repository_id = %s ORDER BY started_at", (repository_id,)))
     assert [row["status"] for row in statuses] == ["succeeded"]
+
+
+def test_ingest_limit_allows_two_repositories_without_losing_the_third(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert DATABASE_URL
+    root = tmp_path / "repositories"
+    database = Database(DATABASE_URL)
+    settings = Settings(database_url=DATABASE_URL, qdrant_url="http://qdrant:6333", local_repositories_root=str(root), ingest_max_concurrency=2)
+    repositories = []
+    for name in ("first", "second", "third"):
+        repository_path = root / name
+        repository_path.mkdir(parents=True)
+        (repository_path / "file.py").write_text("content\n")
+        repositories.append(RepositoryStore(database).create({"id": uuid4(), "source_type": "local", "source_value": name, "selected_ref": None, "display_name": name}))
+
+    started = threading.Event()
+    release = threading.Event()
+    active = 0
+    active_lock = threading.Lock()
+    original_discovery = __import__("hydrawiki.manifest", fromlist=["discover_eligible_files"]).discover_eligible_files
+    def complete_indexing(current_database, _settings, _repository_id, run_id):
+        with current_database.connection() as connection:
+            connection.execute("UPDATE manifest_runs SET status = 'succeeded', completed_at = now() WHERE id = %s", (run_id,))
+
+    monkeypatch.setattr("hydrawiki.manifest.index_manifest", complete_indexing)
+
+    def slow_discovery(source_root, current_settings):
+        nonlocal active
+        with active_lock:
+            active += 1
+            if active == 2:
+                started.set()
+        assert release.wait(5)
+        return original_discovery(source_root, current_settings)
+
+    monkeypatch.setattr("hydrawiki.manifest.discover_eligible_files", slow_discovery)
+    results: list = []
+    threads = [threading.Thread(target=lambda repository=repository: results.append(run_manifest(Database(DATABASE_URL), settings, repository))) for repository in repositories[:2]]
+    for thread in threads:
+        thread.start()
+    assert started.wait(5)
+    with pytest.raises(ManifestBusyError, match="ingest concurrency limit reached"):
+        run_manifest(Database(DATABASE_URL), settings, repositories[2])
+    release.set()
+    for thread in threads:
+        thread.join(timeout=5)
+    assert [result.status for result in results] == ["succeeded", "succeeded"]
+    with database.connection() as connection:
+        runs = list(connection.execute("SELECT repository_id, status FROM manifest_runs WHERE repository_id = ANY(%s)", ([repository["id"] for repository in repositories],)))
+    assert sorted((row["repository_id"], row["status"]) for row in runs) == sorted((repository["id"], "succeeded") for repository in repositories[:2])
 
 
 def test_excluded_repository_bytes_breach_preserves_previous_inventory(tmp_path: Path) -> None:

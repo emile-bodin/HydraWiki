@@ -29,7 +29,7 @@ class ManifestError(RuntimeError):
 
 
 class ManifestBusyError(ManifestError):
-    """Another process currently owns the single-ingest lease."""
+    """No safe manifest lease is currently available."""
 
 
 @dataclass(frozen=True)
@@ -236,20 +236,39 @@ class ManifestStore:
 
 
 class ManifestLease:
-    """A PostgreSQL session lock spanning the complete source scan and apply."""
+    """Bound global manifest work and serialize each repository's source update."""
 
-    def __init__(self, database: Database):
+    def __init__(self, database: Database, repository_id: UUID, slots: int):
         self.database = database
+        self.repository_id = repository_id
+        self.slots = slots
         self.connection = None
+        self.slot: int | None = None
 
     def __enter__(self) -> "ManifestLease":
         self.connection_context = self.database.connection()
         self.connection = self.connection_context.__enter__()
-        acquired = self.connection.execute("SELECT pg_try_advisory_lock(hashtext('hydrawiki.manifest-ingest')) AS acquired").fetchone()["acquired"]
-        if not acquired:
+        repository_acquired = self.connection.execute(
+            "SELECT pg_try_advisory_lock(hashtext('hydrawiki.manifest-repository'), hashtext(%s)) AS acquired",
+            (str(self.repository_id),),
+        ).fetchone()["acquired"]
+        if not repository_acquired:
             self.connection_context.__exit__(None, None, None)
             self.connection = None
-            raise ManifestBusyError("another manifest scan is already running")
+            raise ManifestBusyError("another manifest scan for this repository is already running")
+        for slot in range(self.slots):
+            acquired = self.connection.execute(
+                "SELECT pg_try_advisory_lock(hashtext('hydrawiki.manifest-ingest') + %s) AS acquired",
+                (slot,),
+            ).fetchone()["acquired"]
+            if acquired:
+                self.slot = slot
+                break
+        if self.slot is None:
+            self.connection.execute("SELECT pg_advisory_unlock(hashtext('hydrawiki.manifest-repository'), hashtext(%s))", (str(self.repository_id),))
+            self.connection_context.__exit__(None, None, None)
+            self.connection = None
+            raise ManifestBusyError("ingest concurrency limit reached")
         return self
 
     def __exit__(self, exception_type, exception, traceback) -> None:
@@ -257,13 +276,15 @@ class ManifestLease:
         # unexpected worker exception. Explicit unlock is best-effort only.
         if self.connection is not None:
             try:
-                self.connection.execute("SELECT pg_advisory_unlock(hashtext('hydrawiki.manifest-ingest'))")
+                if self.slot is not None:
+                    self.connection.execute("SELECT pg_advisory_unlock(hashtext('hydrawiki.manifest-ingest') + %s)", (self.slot,))
+                self.connection.execute("SELECT pg_advisory_unlock(hashtext('hydrawiki.manifest-repository'), hashtext(%s))", (str(self.repository_id),))
             finally:
                 self.connection_context.__exit__(exception_type, exception, traceback)
 
 
 def run_manifest(database: Database, settings: Settings, repository: dict) -> ManifestResult:
-    with ManifestLease(database):
+    with ManifestLease(database, repository["id"], settings.ingest_max_concurrency):
         store = ManifestStore(database)
         run_id = store.start(repository["id"])
         source_iter = _scan_path(repository, settings, run_id)

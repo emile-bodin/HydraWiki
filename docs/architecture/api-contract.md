@@ -15,7 +15,7 @@ here as shapes only; they are not implemented until their approved phase.
 `GET /health/ready` confirms that typed application configuration loaded:
 
 ```json
-{"status":"ok","service":"HydraWiki","checks":{"configuration":"ok"}}
+{"status":"ok","service":"HydraWiki","checks":{"configuration":"ok"},"configuration":{"embedding_max_concurrency":2,"ingest_max_concurrency":1,"generation_max_concurrency":1}}
 ```
 
 Phase 1 does not contact PostgreSQL, Qdrant, LiteLLM, or Ollama from these
@@ -47,7 +47,11 @@ application configuration validation.
 |---|---|---:|---|---|
 | `HYDRAWIKI_MAX_REPOSITORY_SIZE_BYTES` | Maximum total on-disk repository size accepted for a sync | `1073741824` bytes (1 GiB) | Positive integer bytes | `api` |
 | `HYDRAWIKI_MAX_SOURCE_FILES` | Maximum eligible source-file count accepted for a sync | `25000` files | Positive integer count | `api` |
-| `HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY` | Maximum concurrent embedding requests during sync indexing | `2` requests | Integer from `1` through `2` | `api` |
+| `HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY` | Maximum concurrent embedding requests during sync indexing | `2` requests | Integer from `1` through `2` | `api`, `worker` |
+| `HYDRAWIKI_INGEST_MAX_CONCURRENCY` | Maximum concurrent manifest and ingest runs | `1` run | Integer from `1` through `2` | `api`, `worker` |
+| `HYDRAWIKI_GENERATION_MAX_CONCURRENCY` | Maximum concurrent wiki-generation runs | `1` run | Integer from `1` through `2` | `api` |
+
+The readiness response exposes these effective non-secret concurrency values. Ingest and generation use PostgreSQL advisory-lock slots shared across API and worker processes; a full bound returns the existing HTTP `409` bounded response before a new run is created. Ingest also keeps a repository-specific lease, so increasing its global bound cannot overlap source updates for one repository. The upper bound of `2` is safe for this implementation because an ingest run makes embedding requests sequentially and `HYDRAWIKI_EMBEDDING_MAX_CONCURRENCY` is already capped at `2`; generation makes one synchronous external request per run, so the same bound prevents an unbounded provider request fan-out without adding a queue. These controls are independent: the ingest limit bounds complete manifest/index lifecycles, while the embedding limit bounds requests within the admitted ingests.
 
 Docker CPU and memory limits are outside this issue and are not configured here.
 

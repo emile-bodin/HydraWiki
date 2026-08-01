@@ -15,7 +15,7 @@ from .health import HealthResponse, liveness, readiness
 from .manifest import ManifestBusyError, ManifestStore, run_manifest
 from .persistence import Database, RepositoryStore
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter, SourceValidationError
-from .wiki import WikiStore, generate_wiki_page
+from .wiki import GenerationBusyError, WikiStore, generate_wiki_page
 from .vectors import QdrantVectorStore
 
 
@@ -132,7 +132,7 @@ async def lifespan(_: FastAPI):
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=(settings.app_name if settings else "HydraWiki"), version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
-    @app.get("/health/live", response_model=HealthResponse, tags=["health"])
+    @app.get("/health/live", response_model=HealthResponse, response_model_exclude_none=True, tags=["health"])
     def health_live() -> HealthResponse:
         return liveness(app.state.settings or validate_settings())
 
@@ -225,7 +225,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database = Database(str(current.database_url))
         if RepositoryStore(database).get(repository_id) is None:
             raise HTTPException(status_code=404, detail="repository not found")
-        result = generate_wiki_page(database, current, repository_id, request.path, request.title, request.source_paths)
+        try:
+            result = generate_wiki_page(database, current, repository_id, request.path, request.title, request.source_paths)
+        except GenerationBusyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         row = WikiStore(database).get_run(result.run_id)
         if row is None:
             # The storage failure remains truthful: no page was published.
