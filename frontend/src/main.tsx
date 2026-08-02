@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, JSX, useEffect, useRef, useState } from "react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -67,6 +67,62 @@ export function SafeDiagram({ diagram }: { diagram: MermaidDiagram }) {
   return <img className="diagram" alt="Validated Mermaid diagram" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(diagram.svg)}`} />;
 }
 
+function renderDocument(content: string) {
+  const lines = content.split("\n");
+  const blocks: JSX.Element[] = [];
+  let paragraph: string[] = [];
+  let list: string[] = [];
+  let code: string[] = [];
+  let inCode = false;
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      blocks.push(<p key={`paragraph-${blocks.length}`}>{paragraph.join(" ")}</p>);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      blocks.push(<ul key={`list-${blocks.length}`}>{list.map((item) => <li key={item}>{item}</li>)}</ul>);
+      list = [];
+    }
+  };
+  const flushCode = () => {
+    if (code.length) {
+      blocks.push(<pre className="reader-code" key={`code-${blocks.length}`}><code>{code.join("\n")}</code></pre>);
+      code = [];
+    }
+  };
+
+  lines.forEach((line) => {
+    if (line.trim().startsWith("```")) {
+      if (inCode) flushCode();
+      else { flushParagraph(); flushList(); }
+      inCode = !inCode;
+    } else if (inCode) code.push(line);
+    else if (/^#{1,3} /.test(line)) {
+      flushParagraph();
+      flushList();
+      const level = line.match(/^#+/)?.[0].length ?? 2;
+      const Heading = `h${Math.min(level + 1, 4)}` as keyof JSX.IntrinsicElements;
+      blocks.push(<Heading key={`heading-${blocks.length}`}>{line.replace(/^#+ /, "")}</Heading>);
+    } else if (/^[-*] /.test(line)) {
+      flushParagraph();
+      list.push(line.replace(/^[-*] /, ""));
+    } else if (!line.trim()) {
+      flushParagraph();
+      flushList();
+    } else {
+      flushList();
+      paragraph.push(line.trim());
+    }
+  });
+  flushParagraph();
+  flushList();
+  flushCode();
+  return blocks;
+}
+
 function RepositorySelect({ repositories, selectedRepository, select }: { repositories: Repository[]; selectedRepository: Repository | null; select: (repository: Repository) => void }) {
   return <label className="repository-select">Repository
     <select aria-label="Repository" value={selectedRepository?.id ?? ""} onChange={(event) => {
@@ -79,16 +135,16 @@ function RepositorySelect({ repositories, selectedRepository, select }: { reposi
   </label>;
 }
 
-function ReaderView({ repositories, selectedRepository, pages, page, select, openPage, openSource, openOperator }: {
+function ReaderView({ repositories, selectedRepository, pages, page, source, loading, select, openPage, openSource, openOperator }: {
   repositories: Repository[]; selectedRepository: Repository | null; pages: WikiPageSummary[]; page: WikiPage | null;
-  select: (repository: Repository) => void; openPage: (page: WikiPageSummary) => void; openSource: (citation: Citation) => void; openOperator: () => void;
+  source: IndexedSource | null; loading: boolean; select: (repository: Repository) => void; openPage: (page: WikiPageSummary) => void; openSource: (citation: Citation) => void; openOperator: () => void;
 }) {
   return <main className="reader-shell">
     <header className="reader-header"><div><p className="eyebrow">HydraWiki</p><h1>Technical documentation, ready to read.</h1></div><button className="quiet-button" onClick={openOperator}>Operator dashboard</button></header>
-    <section className="repository-bar" aria-label="Repository status"><RepositorySelect repositories={repositories} selectedRepository={selectedRepository} select={select} />{selectedRepository && <p><strong>{selectedRepository.lifecycle_status}</strong>{selectedRepository.last_successful_processing_at ? ` · updated ${timestamp(selectedRepository.last_successful_processing_at)}` : ""}</p>}</section>
-    {!selectedRepository ? <section className="reader-empty"><h2>Choose a repository to read its wiki</h2><p>Register and process a repository from the operator dashboard.</p><button onClick={openOperator}>Open operator dashboard</button></section> : pages.length === 0 ? <section className="reader-empty"><h2>No published pages yet</h2><p>{selectedRepository.display_name} does not have documentation ready to read.</p><button onClick={openOperator}>Open operator dashboard</button></section> : <section className="wiki-layout">
-      <nav className="page-navigation" aria-label="Published pages"><p className="eyebrow">Published pages</p>{pages.map((summary) => <button className={`page-link ${page?.path === summary.path ? "active" : ""}`} key={summary.path} onClick={() => void openPage(summary)}>{summary.title}</button>)}</nav>
-      <article className="reader-page">{page ? <><p className="eyebrow">{selectedRepository.display_name}</p><h2>{page.title}</h2><pre>{page.content}</pre>{page.diagrams.map((diagram) => <SafeDiagram key={diagram.ordinal} diagram={diagram} />)}{page.citations.length > 0 && <footer className="citations"><h3>Sources</h3>{page.citations.map((citation) => <button className="citation" key={citationLabel(citation)} onClick={() => void openSource(citation)}>{citationLabel(citation)}</button>)}</footer>}</> : <><h2>Select a page</h2><p>Choose a published page from the navigation to start reading.</p></>}</article>
+    <section className="repository-bar" aria-label="Repository status"><RepositorySelect repositories={repositories} selectedRepository={selectedRepository} select={select} />{selectedRepository && <p><strong>{selectedRepository.display_name}</strong><span> · {selectedRepository.lifecycle_status}</span>{selectedRepository.last_successful_processing_at ? ` · updated ${timestamp(selectedRepository.last_successful_processing_at)}` : ""}</p>}</section>
+    {loading ? <section className="reader-empty" aria-live="polite"><p className="eyebrow">Reader</p><h2>Loading your documentation</h2><p>Fetching repositories and published pages.</p></section> : !selectedRepository ? <section className="reader-empty"><p className="eyebrow">Get started</p><h2>Choose a repository to read its wiki</h2><p>Register a repository, index its files, and generate a page from the operator dashboard.</p><button onClick={openOperator}>Open operator dashboard</button></section> : pages.length === 0 ? <section className="reader-empty"><p className="eyebrow">{selectedRepository.display_name}</p><h2>No published pages yet</h2><p>Once ingestion is complete, generate a wiki page from the operator dashboard to see it here.</p><button onClick={openOperator}>Open operator dashboard</button></section> : <section className="wiki-layout">
+      <nav className="page-navigation" aria-label="Published pages"><p className="eyebrow">In this wiki</p><h2>{selectedRepository.display_name}</h2><p className="navigation-help">Published pages</p>{pages.map((summary) => <button className={`page-link ${page?.path === summary.path ? "active" : ""}`} key={summary.path} onClick={() => void openPage(summary)}>{summary.title}<span>{summary.path}</span></button>)}</nav>
+      <article className="reader-page">{page ? <><p className="eyebrow">{selectedRepository.display_name} / {page.path}</p><h2>{page.title}</h2><div className="reader-content">{renderDocument(page.content)}</div>{page.diagrams.map((diagram) => <SafeDiagram key={diagram.ordinal} diagram={diagram} />)}{page.citations.length > 0 && <footer className="citations"><div><p className="eyebrow">Traceability</p><h3>Sources</h3><p>Open a citation to inspect the indexed lines behind this page.</p></div><div className="citation-list">{page.citations.map((citation, index) => <button className="citation" key={`${citationLabel(citation)}-${index}`} onClick={() => void openSource(citation)}><span>{citation.path}</span><small>Lines {citation.line_start}–{citation.line_end}</small></button>)}</div></footer>}{source && <aside className="source-drawer" aria-label="Indexed source"><div><p className="eyebrow">Indexed source</p><h3>{source.path}</h3><p>{source.line_count} indexed lines</p></div><pre>{source.content}</pre></aside>}</> : <><h2>Select a page</h2><p>Choose a published page from the navigation to start reading.</p></>}</article>
     </section>}
   </main>;
 }
@@ -120,6 +176,7 @@ export function App() {
   const [pages, setPages] = useState<WikiPageSummary[]>([]);
   const [page, setPage] = useState<WikiPage | null>(null);
   const [source, setSource] = useState<IndexedSource | null>(null);
+  const [loadingRepositories, setLoadingRepositories] = useState(true);
   const [error, setError] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   const generationFormRef = useRef<HTMLFormElement>(null);
@@ -128,7 +185,7 @@ export function App() {
   async function loadGenerationRuns(repositoryId: string) { setGenerationRuns(await request<GenerationRun[]>(`/api/repositories/${repositoryId}/generation-runs`)); }
   async function loadPublishedPages(repositoryId: string) { setPages(await request<WikiPageSummary[]>(`/api/repositories/${repositoryId}/pages`)); }
   async function select(repository: Repository) { setError(""); setSelectedRepository(repository); setPage(null); setSource(null); try { const [runs, generations, publishedPages] = await Promise.all([request<IngestionRun[]>(`/api/repositories/${repository.id}/ingestion-runs`), request<GenerationRun[]>(`/api/repositories/${repository.id}/generation-runs`), request<WikiPageSummary[]>(`/api/repositories/${repository.id}/pages`)]); setIngestionRuns(runs); setGenerationRuns(generations); setPages(publishedPages); if (publishedPages[0]) setPage(await request<WikiPage>(`/api/repositories/${repository.id}/pages/${encodeURIComponent(publishedPages[0].path)}`)); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load repository details"); } }
-  async function loadRepositories() { try { const loaded = await request<Repository[]>("/api/repositories"); setRepositories(loaded); if (!selectedRepository && loaded[0]) await select(loaded[0]); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load repositories"); } }
+  async function loadRepositories() { try { const loaded = await request<Repository[]>("/api/repositories"); setRepositories(loaded); if (!selectedRepository && loaded[0]) await select(loaded[0]); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load repositories"); } finally { setLoadingRepositories(false); } }
   useEffect(() => { void loadRepositories(); }, []);
   useEffect(() => {
     if (!selectedRepository || (!startingIngestion && ingestionRuns[0]?.status !== "running")) return;
@@ -149,9 +206,9 @@ export function App() {
   async function start() { if (!selectedRepository) return; setError(""); setStartingIngestion(true); try { const run = await startIngestion(selectedRepository.id); setIngestionRuns((runs) => [run, ...runs.filter((existing) => existing.id !== run.id)]); await loadIngestionRuns(selectedRepository.id); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not start ingestion"); } finally { setStartingIngestion(false); } }
   async function generate(event: FormEvent<HTMLFormElement>) { if (!selectedRepository) return; event.preventDefault(); setError(""); setStartingGeneration(true); const data = new FormData(event.currentTarget); try { const run = await startGeneration(selectedRepository.id, { path: String(data.get("path")), title: String(data.get("title")), source_paths: null }); setGenerationRuns((runs) => [run, ...runs.filter((existing) => existing.id !== run.id)]); await loadGenerationRuns(selectedRepository.id); if (run.status === "succeeded") await loadPublishedPages(selectedRepository.id); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not start generation"); } finally { setStartingGeneration(false); } }
   async function openPage(summary: WikiPageSummary) { if (!selectedRepository) return; setError(""); setSource(null); try { setPage(await request<WikiPage>(`/api/repositories/${selectedRepository.id}/pages/${encodeURIComponent(summary.path)}`)); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load wiki page"); } }
-  async function openSource(citation: Citation) { if (!selectedRepository) return; setError(""); setView("operator"); try { setSource(await request<IndexedSource>(`/api/repositories/${selectedRepository.id}/sources/${encodeURIComponent(citation.path)}`)); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load indexed source"); } }
+  async function openSource(citation: Citation) { if (!selectedRepository) return; setError(""); try { setSource(await request<IndexedSource>(`/api/repositories/${selectedRepository.id}/sources/${encodeURIComponent(citation.path)}`)); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load indexed source"); } }
 
-  return view === "reader" ? <ReaderView repositories={repositories} selectedRepository={selectedRepository} pages={pages} page={page} select={select} openPage={openPage} openSource={openSource} openOperator={() => setView("operator")} /> : <OperatorView repositories={repositories} selectedRepository={selectedRepository} sourceType={sourceType} error={error} ingestionRuns={ingestionRuns} generationRuns={generationRuns} startingIngestion={startingIngestion} startingGeneration={startingGeneration} page={page} source={source} formRef={formRef} generationFormRef={generationFormRef} setSourceType={setSourceType} select={select} register={register} remove={remove} start={start} generate={generate} openReader={() => setView("reader")} />;
+  return view === "reader" ? <ReaderView repositories={repositories} selectedRepository={selectedRepository} pages={pages} page={page} source={source} loading={loadingRepositories} select={select} openPage={openPage} openSource={openSource} openOperator={() => setView("operator")} /> : <OperatorView repositories={repositories} selectedRepository={selectedRepository} sourceType={sourceType} error={error} ingestionRuns={ingestionRuns} generationRuns={generationRuns} startingIngestion={startingIngestion} startingGeneration={startingGeneration} page={page} source={source} formRef={formRef} generationFormRef={generationFormRef} setSourceType={setSourceType} select={select} register={register} remove={remove} start={start} generate={generate} openReader={() => setView("reader")} />;
 }
 
 const rootElement = document.getElementById("root");
