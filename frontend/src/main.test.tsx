@@ -39,7 +39,7 @@ test("shows durable progress, keeps failed generation separate from published pa
   render(<App />);
 
   await screen.findByText("Technical documentation, ready to read.");
-  expect(await screen.findByText("# Overview")).toBeInTheDocument();
+  expect((await screen.findAllByRole("heading", { name: "Overview" })).length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: "Operator dashboard" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Operator dashboard" }));
   await screen.findByText("Operator dashboard");
@@ -52,11 +52,11 @@ test("shows durable progress, keeps failed generation separate from published pa
   expect(screen.getByText((_, element) => element?.tagName === "PRE" && element.textContent === "flowchart TD\nA-->B")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Back to wiki reader" }));
-  await screen.findByRole("button", { name: "Overview" });
-  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-  await screen.findByText("# Overview");
+  await screen.findByRole("button", { name: /Overview/ });
+  fireEvent.click(screen.getByRole("button", { name: /Overview/ }));
+  expect(await screen.findAllByRole("heading", { name: "Overview" })).toHaveLength(2);
   expect(screen.getByRole("img", { name: "Validated Mermaid diagram" }).getAttribute("src")).toContain("data:image/svg+xml");
-  fireEvent.click(screen.getByRole("button", { name: "src/app.py:4–8" }));
+  fireEvent.click(screen.getByRole("button", { name: /src\/app\.pyLines 4–8/ }));
   await screen.findByText("print('indexed')");
   expect(fetchMock.mock.calls.map(([path]) => path)).toContain("/api/repositories/repo-1/sources/src%2Fapp.py");
 });
@@ -241,4 +241,29 @@ test("uses the reader empty state to direct operators to setup", async () => {
   await screen.findByText("Choose a repository to read its wiki");
   fireEvent.click(screen.getByRole("button", { name: "Open operator dashboard" }));
   expect(await screen.findByText("Operator dashboard")).toBeInTheDocument();
+});
+
+test("renders generated Markdown as readable reader content and keeps sources in the reader", async () => {
+  const readableRepository = { ...repository, last_successful_processing_at: null };
+  const fetchMock = vi.fn(async (input: string) => {
+    if (input === "/api/repositories") return new Response(JSON.stringify([readableRepository]), { status: 200 });
+    if (input === "/api/repositories/repo-1/ingestion-runs" || input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify([]), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([{ path: "guide", title: "Getting started", lifecycle_status: "published", generation_run_id: "generation-1" }]), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages/guide") return new Response(JSON.stringify({
+      id: "page-1", path: "guide", title: "Getting started", lifecycle_status: "published", generation_run_id: "generation-1",
+      content: "# Getting started\n\nUse HydraWiki to document your repository.\n\n- Register a repository\n- Generate a page",
+      citations: [{ path: "README.md", line_start: 1, line_end: 6 }], diagrams: [],
+    }), { status: 200 });
+    if (input === "/api/repositories/repo-1/sources/README.md") return new Response(JSON.stringify({ path: "README.md", line_count: 6, content: "# HydraWiki" }), { status: 200 });
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  expect(await screen.findByText("Use HydraWiki to document your repository.")).toBeInTheDocument();
+  expect(screen.getByRole("list")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /README.md/ }));
+  expect(await screen.findByRole("heading", { name: "README.md" })).toBeInTheDocument();
+  expect(screen.getByText("# HydraWiki")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Operator dashboard" })).toBeInTheDocument();
 });

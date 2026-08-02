@@ -11,22 +11,39 @@ h1, h2, h3, p { margin-top: 0; }
 .reader-header h1 { max-width: 42rem; font-size: clamp(2.4rem, 6vw, 4.6rem); line-height: 1.02; letter-spacing: -.045em; margin-bottom: 0; }
 .operator-header h1 { font-size: clamp(2rem, 5vw, 3.4rem); margin-bottom: .5rem; }
 .quiet-button { color: #147d92; background: transparent; border: 1px solid #9bc4ce; white-space: nowrap; }
-.repository-bar { display: flex; align-items: end; gap: 1.5rem; padding: 1rem 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .8rem; }
+.repository-bar { display: flex; align-items: end; gap: 1.5rem; padding: 1rem 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .8rem; box-shadow: 0 8px 24px rgb(23 32 42 / 4%); }
 .repository-bar p { margin: 0 0 .65rem; color: #52616b; }
+.repository-bar p strong { color: #17202a; }
 .repository-select { min-width: min(100%, 25rem); }
 .reader-empty { max-width: 38rem; margin: 10vh auto; padding: 2rem; background: white; border: 1px solid #d9e2e7; border-radius: .8rem; }
 .reader-empty p { color: #52616b; }
-.wiki-layout { display: grid; grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr); gap: 3rem; margin-top: 2.5rem; }
+.wiki-layout { display: grid; grid-template-columns: minmax(14rem, 17rem) minmax(0, 46rem); justify-content: center; gap: clamp(2rem, 6vw, 5rem); margin-top: 3rem; }
 .page-navigation { align-self: start; position: sticky; top: 1.5rem; }
-.page-link { display: block; width: 100%; color: #41525c; background: transparent; text-align: left; padding: .65rem .75rem; border-radius: .35rem; }
+.page-navigation h2 { font-size: 1.1rem; margin: .25rem 0 1.5rem; overflow-wrap: anywhere; }
+.navigation-help { color: #52616b; font-size: .85rem; margin-bottom: .4rem; }
+.page-link { display: grid; gap: .2rem; width: 100%; color: #41525c; background: transparent; text-align: left; padding: .7rem .75rem; border-radius: .35rem; }
+.page-link span { color: #72838c; font-size: .75rem; }
 .page-link:hover, .page-link.active { color: #0d5260; background: #dff0f3; font-weight: 700; }
 .reader-page { min-width: 0; padding: 0 0 4rem; }
 .reader-page h2 { font-size: clamp(2rem, 4vw, 3.25rem); letter-spacing: -.035em; margin-bottom: 1.5rem; }
+.reader-content { color: #263842; font-family: ui-serif, Georgia, serif; font-size: 1.08rem; line-height: 1.8; }
+.reader-content h3, .reader-content h4 { color: #17202a; font-family: Inter, ui-sans-serif, system-ui, sans-serif; line-height: 1.2; margin: 2rem 0 .65rem; }
+.reader-content p { margin-bottom: 1.15rem; }
+.reader-content ul { padding-left: 1.4rem; margin: 0 0 1.25rem; }
+.reader-content li { padding-left: .35rem; margin: .35rem 0; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f0f4f5; padding: 1rem; border-radius: .45rem; }
-.reader-page > pre { font-family: ui-serif, Georgia, serif; font-size: 1rem; line-height: 1.75; background: transparent; padding: 0; }
-.citations { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid #d9e2e7; }
-.citations h3 { font-size: .9rem; color: #52616b; }
-.citation { display: inline-block; margin: 0 .75rem .5rem 0; padding: 0; color: #147d92; background: transparent; text-decoration: underline; }
+.reader-code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .85rem; line-height: 1.55; margin: 1.5rem 0; }
+.citations { display: grid; gap: 1rem; margin-top: 3rem; padding: 1.25rem 0 0; border-top: 1px solid #d9e2e7; }
+.citations h3 { font-size: 1rem; margin-bottom: .3rem; }
+.citations p { color: #52616b; margin-bottom: 0; }
+.citation-list { display: flex; flex-wrap: wrap; gap: .5rem; }
+.citation { display: grid; gap: .15rem; margin: 0; padding: .55rem .7rem; color: #147d92; background: #f0f7f8; border: 1px solid #c9e1e5; text-align: left; }
+.citation span { text-decoration: underline; }
+.citation small { color: #52616b; }
+.source-drawer { display: grid; gap: .75rem; margin-top: 2rem; padding: 1.25rem; background: #f8fbfb; border: 1px solid #c9e1e5; border-radius: .7rem; }
+.source-drawer h3 { margin-bottom: .25rem; overflow-wrap: anywhere; }
+.source-drawer p { color: #52616b; margin-bottom: 0; }
+.source-drawer pre { margin: 0; max-height: 22rem; overflow: auto; }
 .operator-shell { max-width: 66rem; }
 .dashboard-section { margin: 2rem 0; }
 form, .repository-card, .run, .page-preview, .source { display: grid; gap: 1rem; padding: 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .75rem; margin: 1rem 0; }
