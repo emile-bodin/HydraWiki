@@ -41,8 +41,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   throw new Error(body?.detail ?? `Request failed (${response.status})`);
 }
 
+export function startIngestion(repositoryId: string) {
+  return request<IngestionRun>(`/api/repositories/${repositoryId}/sync`, { method: "POST" });
+}
+
 function timestamp(value: string | null) {
   return value ? new Date(value).toLocaleString() : "Not available";
+}
+
+export function progressValue(percentage: number) {
+  return Number.isFinite(percentage) ? Math.min(100, Math.max(0, percentage)) : 0;
 }
 
 export function SafeDiagram({ diagram }: { diagram: MermaidDiagram }) {
@@ -76,15 +84,16 @@ function ReaderView({ repositories, selectedRepository, pages, page, select, ope
   </main>;
 }
 
-function OperatorView({ repositories, selectedRepository, sourceType, error, ingestionRuns, generationRuns, page, source, formRef, setSourceType, select, register, remove, openReader }: {
-  repositories: Repository[]; selectedRepository: Repository | null; sourceType: "local" | "public_git"; error: string; ingestionRuns: IngestionRun[]; generationRuns: GenerationRun[]; page: WikiPage | null; source: IndexedSource | null; formRef: React.RefObject<HTMLFormElement | null>;
-  setSourceType: (value: "local" | "public_git") => void; select: (repository: Repository) => void; register: (event: FormEvent<HTMLFormElement>) => void; remove: (id: string) => void; openReader: () => void;
+function OperatorView({ repositories, selectedRepository, sourceType, error, ingestionRuns, generationRuns, startingIngestion, page, source, formRef, setSourceType, select, register, remove, start, openReader }: {
+  repositories: Repository[]; selectedRepository: Repository | null; sourceType: "local" | "public_git"; error: string; ingestionRuns: IngestionRun[]; generationRuns: GenerationRun[]; startingIngestion: boolean; page: WikiPage | null; source: IndexedSource | null; formRef: React.RefObject<HTMLFormElement | null>;
+  setSourceType: (value: "local" | "public_git") => void; select: (repository: Repository) => void; register: (event: FormEvent<HTMLFormElement>) => void; remove: (id: string) => void; start: () => void; openReader: () => void;
 }) {
+  const ingestionRunning = ingestionRuns.some((run) => run.status === "running");
   return <main className="operator-shell"><header className="operator-header"><div><p className="eyebrow">HydraWiki</p><h1>Operator dashboard</h1><p>Manage repositories and inspect processing details.</p></div><button className="quiet-button" onClick={openReader}>Back to wiki reader</button></header>
     {error && <p className="error" role="alert">{error}</p>}
     <section className="dashboard-section"><h2>Register repository</h2><form ref={formRef} onSubmit={register}><label>Name <input name="display_name" required /></label><label>Source type <select value={sourceType} onChange={(event) => setSourceType(event.target.value as "local" | "public_git")}><option value="local">Local mount</option><option value="public_git">Public Git</option></select></label>{sourceType === "local" ? <label>Path below LOCAL_REPOSITORIES_ROOT <input name="path" required placeholder="project" /></label> : <><label>HTTPS Git URL <input name="url" type="url" required placeholder="https://github.com/org/repo.git" /></label><label>Ref <input name="ref" required placeholder="main" /></label></>}<button type="submit">Register repository</button></form></section>
     <section className="dashboard-section"><h2>Registered repositories</h2>{repositories.length === 0 ? <p>No repositories are registered.</p> : repositories.map((repository) => <article key={repository.id} className={`repository-card ${selectedRepository?.id === repository.id ? "selected" : ""}`}><div><button className="repository-name" onClick={() => void select(repository)}>{repository.display_name}</button><p>{repository.source_type}: {repository.source_value}{repository.selected_ref ? ` @ ${repository.selected_ref}` : ""}</p><p>Status: <strong>{repository.lifecycle_status}</strong></p><p>Last successful processing: {timestamp(repository.last_successful_processing_at)}</p>{(repository.current_error ?? repository.last_error) && <p className="error">Current error: {repository.current_error ?? repository.last_error}</p>}</div><button onClick={() => void remove(repository.id)}>Delete</button></article>)}</section>
-    {selectedRepository && <section className="dashboard-section"><h2>{selectedRepository.display_name} details</h2><div className="panels"><div><h3>Ingestion runs</h3>{ingestionRuns.length === 0 ? <p>No ingestion runs recorded.</p> : ingestionRuns.map((run) => <article className={`run ${runState(run.status)}`} key={run.id}><strong>{runState(run.status)}</strong><p>{run.phase}: {run.current_count} / {run.total_count} ({run.percentage}%)</p><p>Started: {timestamp(run.started_at)}{run.completed_at ? `; completed: ${timestamp(run.completed_at)}` : ""}</p>{run.error && <p className="error">{run.error}</p>}<a href={`/api/ingestion-runs/${run.id}/entries`} target="_blank" rel="noreferrer">Recorded manifest entries</a></article>)}</div><div><h3>Generation runs</h3>{generationRuns.length === 0 ? <p>No generation runs recorded.</p> : generationRuns.map((run) => <article className={`run ${runState(run.status)}`} key={run.id}><strong>{run.page_path}: {runState(run.status)}</strong>{run.error && <p className="error">{run.error}</p>}{run.diagrams.map((diagram) => <SafeDiagram key={diagram.ordinal} diagram={diagram} />)}</article>)}</div></div>{page && <article className="page-preview"><h3>Selected page: {page.title}</h3><pre>{page.content}</pre><p>Sources: {page.citations.map(citationLabel).join(", ") || "None"}</p></article>}{source && <article className="source"><h3>{source.path}</h3><p>{source.line_count} indexed lines</p><pre>{source.content}</pre></article>}</section>}
+    {selectedRepository && <section className="dashboard-section"><h2>{selectedRepository.display_name} details</h2><button onClick={start} disabled={startingIngestion || ingestionRunning}>{startingIngestion ? "Starting ingestion" : ingestionRunning ? "Ingestion running" : "Start ingestion"}</button><div className="panels"><div><h3>Ingestion runs</h3>{ingestionRuns.length === 0 ? <p>No ingestion runs recorded.</p> : ingestionRuns.map((run) => <article className={`run ${runState(run.status)}`} key={run.id}><strong>{runState(run.status)}</strong><p>{run.phase}: {run.current_count} / {run.total_count} ({progressValue(run.percentage)}%)</p><progress aria-label={`${run.phase} progress`} value={progressValue(run.percentage)} max={100}>{progressValue(run.percentage)}%</progress><p>Started: {timestamp(run.started_at)}{run.completed_at ? `; completed: ${timestamp(run.completed_at)}` : ""}</p>{run.error && <p className="error">{run.error}</p>}<a href={`/api/ingestion-runs/${run.id}/entries`} target="_blank" rel="noreferrer">Recorded manifest entries</a></article>)}</div><div><h3>Generation runs</h3>{generationRuns.length === 0 ? <p>No generation runs recorded.</p> : generationRuns.map((run) => <article className={`run ${runState(run.status)}`} key={run.id}><strong>{run.page_path}: {runState(run.status)}</strong>{run.error && <p className="error">{run.error}</p>}{run.diagrams.map((diagram) => <SafeDiagram key={diagram.ordinal} diagram={diagram} />)}</article>)}</div></div>{page && <article className="page-preview"><h3>Selected page: {page.title}</h3><pre>{page.content}</pre><p>Sources: {page.citations.map(citationLabel).join(", ") || "None"}</p></article>}{source && <article className="source"><h3>{source.path}</h3><p>{source.line_count} indexed lines</p><pre>{source.content}</pre></article>}</section>}
   </main>;
 }
 
@@ -94,6 +103,7 @@ export function App() {
   const [sourceType, setSourceType] = useState<"local" | "public_git">("local");
   const [selectedRepository, setSelectedRepository] = useState<Repository | null>(null);
   const [ingestionRuns, setIngestionRuns] = useState<IngestionRun[]>([]);
+  const [startingIngestion, setStartingIngestion] = useState(false);
   const [generationRuns, setGenerationRuns] = useState<GenerationRun[]>([]);
   const [pages, setPages] = useState<WikiPageSummary[]>([]);
   const [page, setPage] = useState<WikiPage | null>(null);
@@ -101,15 +111,22 @@ export function App() {
   const [error, setError] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
 
+  async function loadIngestionRuns(repositoryId: string) { setIngestionRuns(await request<IngestionRun[]>(`/api/repositories/${repositoryId}/ingestion-runs`)); }
   async function select(repository: Repository) { setError(""); setSelectedRepository(repository); setPage(null); setSource(null); try { const [runs, generations, publishedPages] = await Promise.all([request<IngestionRun[]>(`/api/repositories/${repository.id}/ingestion-runs`), request<GenerationRun[]>(`/api/repositories/${repository.id}/generation-runs`), request<WikiPageSummary[]>(`/api/repositories/${repository.id}/pages`)]); setIngestionRuns(runs); setGenerationRuns(generations); setPages(publishedPages); if (publishedPages[0]) setPage(await request<WikiPage>(`/api/repositories/${repository.id}/pages/${encodeURIComponent(publishedPages[0].path)}`)); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load repository details"); } }
   async function loadRepositories() { try { const loaded = await request<Repository[]>("/api/repositories"); setRepositories(loaded); if (!selectedRepository && loaded[0]) await select(loaded[0]); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load repositories"); } }
   useEffect(() => { void loadRepositories(); }, []);
+  useEffect(() => {
+    if (!selectedRepository || (!startingIngestion && ingestionRuns[0]?.status !== "running")) return;
+    const timer = window.setInterval(() => { void loadIngestionRuns(selectedRepository.id).catch((exception: unknown) => setError(exception instanceof Error ? exception.message : "Could not refresh ingestion progress")); }, 1500);
+    return () => window.clearInterval(timer);
+  }, [selectedRepository?.id, ingestionRuns[0]?.status, startingIngestion]);
   async function register(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setError(""); const data = new FormData(event.currentTarget); const payload = sourceType === "local" ? { source_type: "local", path: data.get("path"), display_name: data.get("display_name") } : { source_type: "public_git", url: data.get("url"), ref: data.get("ref"), display_name: data.get("display_name") }; try { await request<Repository>("/api/repositories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); formRef.current?.reset(); await loadRepositories(); } catch (exception) { setError(exception instanceof Error ? exception.message : "Registration failed"); } }
   async function remove(id: string) { setError(""); try { await request<Repository>(`/api/repositories/${id}`, { method: "DELETE" }); if (selectedRepository?.id === id) { setSelectedRepository(null); setPages([]); setPage(null); setSource(null); } await loadRepositories(); } catch (exception) { setError(exception instanceof Error ? exception.message : "Deletion failed"); } }
+  async function start() { if (!selectedRepository) return; setError(""); setStartingIngestion(true); try { const run = await startIngestion(selectedRepository.id); setIngestionRuns((runs) => [run, ...runs.filter((existing) => existing.id !== run.id)]); await loadIngestionRuns(selectedRepository.id); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not start ingestion"); } finally { setStartingIngestion(false); } }
   async function openPage(summary: WikiPageSummary) { if (!selectedRepository) return; setError(""); setSource(null); try { setPage(await request<WikiPage>(`/api/repositories/${selectedRepository.id}/pages/${encodeURIComponent(summary.path)}`)); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load wiki page"); } }
   async function openSource(citation: Citation) { if (!selectedRepository) return; setError(""); setView("operator"); try { setSource(await request<IndexedSource>(`/api/repositories/${selectedRepository.id}/sources/${encodeURIComponent(citation.path)}`)); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not load indexed source"); } }
 
-  return view === "reader" ? <ReaderView repositories={repositories} selectedRepository={selectedRepository} pages={pages} page={page} select={select} openPage={openPage} openSource={openSource} openOperator={() => setView("operator")} /> : <OperatorView repositories={repositories} selectedRepository={selectedRepository} sourceType={sourceType} error={error} ingestionRuns={ingestionRuns} generationRuns={generationRuns} page={page} source={source} formRef={formRef} setSourceType={setSourceType} select={select} register={register} remove={remove} openReader={() => setView("reader")} />;
+  return view === "reader" ? <ReaderView repositories={repositories} selectedRepository={selectedRepository} pages={pages} page={page} select={select} openPage={openPage} openSource={openSource} openOperator={() => setView("operator")} /> : <OperatorView repositories={repositories} selectedRepository={selectedRepository} sourceType={sourceType} error={error} ingestionRuns={ingestionRuns} generationRuns={generationRuns} startingIngestion={startingIngestion} page={page} source={source} formRef={formRef} setSourceType={setSourceType} select={select} register={register} remove={remove} start={start} openReader={() => setView("reader")} />;
 }
 
 const rootElement = document.getElementById("root");
