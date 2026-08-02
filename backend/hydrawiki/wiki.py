@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib import resources
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, ValidationError
@@ -226,13 +227,16 @@ class WikiStore:
             return page
 
 
+def _load_prompt_template() -> str:
+    try:
+        return resources.files("hydrawiki.prompts").joinpath("wiki-v1.txt").read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, OSError, UnicodeError) as exc:
+        raise WikiGenerationError("wiki-v1 prompt template could not be loaded") from exc
+
+
 def _prompt(title: str, sources: list[dict]) -> str:
     excerpts = "\n\n".join(f"--- {row['path']}:{row['line_start']}-{row['line_end']} ---\n{row['chunk_text']}" for row in sources)
-    return (
-        "Write a factual Markdown wiki page titled '%s' using only the indexed source excerpts below. "
-        "Return JSON only with exactly: content (non-empty string) and citations (non-empty array of objects with path, line_start, line_end). "
-        "Every claim must be supported by at least one citation, and every citation must use the provided paths and line ranges.\n\n%s"
-    ) % (title, excerpts)
+    return _load_prompt_template().format(title=title, source_excerpts=excerpts)
 
 
 def generate_wiki_page(database: Database, settings: Settings, repository_id: UUID, page_path: str, title: str, source_paths: list[str] | None = None) -> WikiGenerationResult:
