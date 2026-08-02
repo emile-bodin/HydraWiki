@@ -21,6 +21,9 @@ class WikiGenerationError(RuntimeError):
     pass
 
 
+_PROMPT_PLACEHOLDERS = ("__TITLE__", "__SOURCE_EXCERPTS__")
+
+
 class GenerationBusyError(WikiGenerationError):
     """The configured global wiki-generation limit has been reached."""
 
@@ -236,7 +239,11 @@ def _load_prompt_template() -> str:
 
 def _prompt(title: str, sources: list[dict]) -> str:
     excerpts = "\n\n".join(f"--- {row['path']}:{row['line_start']}-{row['line_end']} ---\n{row['chunk_text']}" for row in sources)
-    return _load_prompt_template().format(title=title, source_excerpts=excerpts)
+    template = _load_prompt_template()
+    missing = [placeholder for placeholder in _PROMPT_PLACEHOLDERS if placeholder not in template]
+    if missing:
+        raise WikiGenerationError(f"wiki-v1 prompt template is missing required placeholder(s): {', '.join(missing)}")
+    return template.replace("__TITLE__", title).replace("__SOURCE_EXCERPTS__", excerpts)
 
 
 def generate_wiki_page(database: Database, settings: Settings, repository_id: UUID, page_path: str, title: str, source_paths: list[str] | None = None) -> WikiGenerationResult:

@@ -1,3 +1,3 @@
-Write a factual Markdown wiki page titled '{title}' using only the indexed source excerpts below. Return JSON only with exactly: content (non-empty string) and citations (non-empty array of objects with path, line_start, line_end). Every claim must be supported by at least one citation, and every citation must use the provided paths and line ranges.
+Write a factual Markdown wiki page titled '__TITLE__' using only the indexed source excerpts below. Return JSON only with exactly: content (non-empty string) and citations (non-empty array of objects with path, line_start, line_end). Every claim must be supported by at least one citation, and every citation must use the provided paths and line ranges.
 
-{source_excerpts}
+__SOURCE_EXCERPTS__
