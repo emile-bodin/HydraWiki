@@ -26,6 +26,13 @@ def test_generation_adapter_configuration_is_optional_and_has_no_default_provide
     assert Settings(database_url="postgresql://db:5432/hydrawiki", qdrant_url="http://qdrant:6333", generation_url="", generation_model="").generation_url is None
 
 
+@pytest.mark.parametrize("endpoint", ["http://provider:4000/v1/chat/completions", "http://provider:4000/v1/responses"])
+def test_generation_url_preserves_the_configured_full_endpoint(endpoint: str) -> None:
+    settings = Settings(database_url="postgresql://db:5432/hydrawiki", qdrant_url="http://qdrant:6333", generation_url=endpoint)
+
+    assert str(settings.generation_url) == endpoint
+
+
 def test_workload_limits_use_typed_defaults() -> None:
     settings = Settings(database_url="postgresql://db:5432/hydrawiki", qdrant_url="http://qdrant:6333")
 
