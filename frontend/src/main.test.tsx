@@ -38,16 +38,21 @@ test("shows durable progress, keeps failed generation separate from published pa
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
 
+  await screen.findByText("Technical documentation, ready to read.");
+  expect(await screen.findByText("# Overview")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Operator dashboard" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Operator dashboard" }));
+  await screen.findByText("Operator dashboard");
   await screen.findByText("Example");
   fireEvent.click(screen.getByRole("button", { name: "Example" }));
   await screen.findByText("Embedding: 3 / 5 (60%)");
   expect(screen.getByText("failed: failed")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Overview published/ })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /failed published/ })).not.toBeInTheDocument();
   expect(screen.getByText("Mermaid validation failed: invalid syntax")).toBeInTheDocument();
   expect(screen.getByText((_, element) => element?.tagName === "PRE" && element.textContent === "flowchart TD\nA-->B")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: /Overview published/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to wiki reader" }));
+  await screen.findByRole("button", { name: "Overview" });
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
   await screen.findByText("# Overview");
   expect(screen.getByRole("img", { name: "Validated Mermaid diagram" }).getAttribute("src")).toContain("data:image/svg+xml");
   fireEvent.click(screen.getByRole("button", { name: "src/app.py:4–8" }));
@@ -81,6 +86,7 @@ test("registers a Public Git repository and refreshes the registered list", asyn
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
 
+  fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
   await screen.findByText("No repositories are registered.");
   fireEvent.change(screen.getByLabelText("Source type"), { target: { value: "public_git" } });
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "HydraWiki" } });
@@ -103,6 +109,7 @@ test("shows a registration error without a runtime exception", async () => {
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
 
+  fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
   await screen.findByText("No repositories are registered.");
   fireEvent.change(screen.getByLabelText("Source type"), { target: { value: "public_git" } });
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Broken repository" } });
@@ -112,4 +119,13 @@ test("shows a registration error without a runtime exception", async () => {
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Repository URL is not reachable");
   expect(screen.getByRole("button", { name: "Register repository" })).toBeInTheDocument();
+});
+
+test("uses the reader empty state to direct operators to setup", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })));
+  render(<App />);
+
+  await screen.findByText("Choose a repository to read its wiki");
+  fireEvent.click(screen.getByRole("button", { name: "Open operator dashboard" }));
+  expect(await screen.findByText("Operator dashboard")).toBeInTheDocument();
 });
