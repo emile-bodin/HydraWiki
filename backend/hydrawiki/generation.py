@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from json import JSONDecodeError
 from urllib.parse import urlsplit
 
 import httpx
@@ -89,6 +91,65 @@ def _responses_content(body: dict) -> str | None:
     return "".join(text_parts) or None
 
 
+def _sse_provider_error(event: dict) -> str | None:
+    error = event.get("error")
+    response = event.get("response")
+    response_error = response.get("error") if isinstance(response, dict) else None
+    candidates = (
+        error.get("message") if isinstance(error, dict) else error,
+        response_error.get("message") if isinstance(response_error, dict) else response_error,
+        event.get("message"),
+        event.get("detail"),
+    )
+    for candidate in candidates:
+        sanitized = _sanitize_provider_message(candidate)
+        if sanitized:
+            return sanitized
+    return None
+
+
+def _responses_sse_content(body: str) -> tuple[str | None, str | None]:
+    delta_parts: list[str] = []
+    done_content: str | None = None
+    completed_content: str | None = None
+    provider_model: str | None = None
+    for line in body.splitlines():
+        if not line or line.startswith(":") or not line.startswith("data:"):
+            continue
+        payload = line[5:].lstrip()
+        if payload == "[DONE]":
+            break
+        try:
+            event = json.loads(payload)
+        except (JSONDecodeError, TypeError) as exc:
+            raise GenerationError("generation service returned a malformed response") from exc
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        if event_type in {"error", "response.error", "response.failed"} or (
+            isinstance(event_type, str) and event_type.endswith(".error")
+        ):
+            detail = _sse_provider_error(event)
+            suffix = f": {detail}" if detail else ""
+            raise GenerationError(f"generation provider returned an error{suffix}")
+        if event_type == "response.output_text.delta":
+            delta = _nonempty_text(event.get("delta"))
+            if delta:
+                delta_parts.append(delta)
+        elif event_type == "response.output_text.done":
+            done_content = _nonempty_text(event.get("text")) or _nonempty_text(event.get("output_text"))
+        elif event_type == "response.completed":
+            completed_response = event.get("response")
+            if isinstance(completed_response, dict):
+                provider_model = _nonempty_text(completed_response.get("model"))
+                completed_content = _responses_content(completed_response)
+            else:
+                completed_content = _responses_content(event)
+    if delta_parts:
+        return "".join(delta_parts), provider_model
+    return done_content or completed_content, provider_model
+
+
 class OpenAICompatibleGenerationAdapter:
     """Call a configured OpenAI-compatible full generation endpoint."""
 
@@ -117,15 +178,22 @@ class OpenAICompatibleGenerationAdapter:
             suffix = f": {detail}" if detail else ""
             raise GenerationError(f"generation service returned HTTP {response.status_code}{suffix}")
         try:
-            body = response.json()
-            if not isinstance(body, dict):
-                raise TypeError
-            if self.endpoint_style == "chat_completions":
-                content = body["choices"][0]["message"]["content"]
+            content: str | None
+            provider_model: str | None = None
+            content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            if self.endpoint_style == "responses" and content_type == "text/event-stream":
+                content, provider_model = _responses_sse_content(response.text)
             else:
-                content = _responses_content(body)
+                body = response.json()
+                if not isinstance(body, dict):
+                    raise TypeError
+                if self.endpoint_style == "chat_completions":
+                    content = body["choices"][0]["message"]["content"]
+                else:
+                    content = _responses_content(body)
+                provider_model = _nonempty_text(body.get("model"))
             if not _nonempty_text(content):
                 raise TypeError
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise GenerationError("generation service returned a malformed response") from exc
-        return GenerationResult(content=content, model=str(body.get("model") or self.model))
+        return GenerationResult(content=content, model=provider_model or self.model)

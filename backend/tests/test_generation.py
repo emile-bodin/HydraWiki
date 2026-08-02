@@ -10,6 +10,15 @@ def response(status: int, body: object) -> httpx.Response:
     return httpx.Response(status, json=body, request=httpx.Request("POST", "http://litellm/v1/chat/completions"))
 
 
+def sse_response(body: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        content=body,
+        headers={"content-type": "text/event-stream; charset=utf-8"},
+        request=httpx.Request("POST", "http://litellm/v1/responses"),
+    )
+
+
 def test_openai_compatible_adapter_uses_configured_chat_completions_endpoint_model_and_optional_bearer_key(monkeypatch) -> None:
     captured = {}
 
@@ -43,6 +52,51 @@ def test_openai_compatible_adapter_uses_configured_responses_endpoint_and_parses
     assert result.model == "provider-model"
     assert captured["url"] == "http://litellm:4000/v1/responses"
     assert captured["json"] == {"model": "configured-model", "input": [{"role": "user", "content": "prompt"}], "max_output_tokens": 123}
+
+
+def test_openai_compatible_adapter_parses_responses_sse_deltas_in_order(monkeypatch) -> None:
+    stream = "\n".join(
+        [
+            ": keep-alive",
+            'data: {"type":"response.created","response":{"model":"provider-model"}}',
+            'data: {"type":"response.output_text.delta","delta":"first "}',
+            'data: {"type":"response.output_text.delta","delta":"second"}',
+            'data: {"type":"response.output_text.done","text":"first second"}',
+            'data: [DONE]',
+        ]
+    )
+    monkeypatch.setattr("httpx.post", lambda *args, **kwargs: sse_response(stream))
+
+    result = OpenAICompatibleGenerationAdapter("http://litellm/v1/responses", "model", None).generate("prompt")
+
+    assert result.content == "first second"
+    assert result.model == "model"
+
+
+def test_openai_compatible_adapter_parses_responses_sse_completed_output(monkeypatch) -> None:
+    stream = 'data: {"type":"response.completed","response":{"model":"provider-model","output":[{"type":"message","content":[{"type":"output_text","text":"completed text"}]}]}}\n'
+    monkeypatch.setattr("httpx.post", lambda *args, **kwargs: sse_response(stream))
+
+    result = OpenAICompatibleGenerationAdapter("http://litellm/v1/responses", "model", None).generate("prompt")
+
+    assert result.content == "completed text"
+    assert result.model == "provider-model"
+
+
+def test_openai_compatible_adapter_fails_closed_for_responses_sse_without_text(monkeypatch) -> None:
+    stream = 'data: {"type":"response.created"}\ndata: [DONE]\n'
+    monkeypatch.setattr("httpx.post", lambda *args, **kwargs: sse_response(stream))
+
+    with pytest.raises(GenerationError, match="malformed"):
+        OpenAICompatibleGenerationAdapter("http://litellm/v1/responses", "model", None).generate("prompt")
+
+
+def test_openai_compatible_adapter_sanitizes_responses_sse_provider_error(monkeypatch) -> None:
+    stream = 'data: {"type":"error","error":{"message":"Authorization: Bearer secret-value failed"}}\n'
+    monkeypatch.setattr("httpx.post", lambda *args, **kwargs: sse_response(stream))
+
+    with pytest.raises(GenerationError, match=re.escape("generation provider returned an error: Authorization: Bearer [redacted] failed")):
+        OpenAICompatibleGenerationAdapter("http://litellm/v1/responses", "model", None).generate("prompt")
 
 
 @pytest.mark.parametrize("body", [{}, {"choices": []}, {"choices": [{"message": {"content": ""}}]}])
