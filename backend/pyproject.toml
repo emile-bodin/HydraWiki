@@ -29,4 +29,4 @@ testpaths = ["tests"]
 where = ["."]
 
 [tool.setuptools.package-data]
-hydrawiki = ["migrations/*.sql"]
+hydrawiki = ["migrations/*.sql", "prompts/*.txt"]
