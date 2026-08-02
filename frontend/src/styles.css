@@ -1,25 +1,44 @@
-:root { font-family: system-ui, sans-serif; color: #17202a; background: #f4f7f9; }
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #17202a; background: #f4f7f9; }
 body { margin: 0; }
-main { max-width: 52rem; margin: 8vh auto; padding: 2rem; }
-.eyebrow { color: #147d92; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-h1 { max-width: 34rem; font-size: clamp(2.5rem, 8vw, 5rem); line-height: 1; margin: 1rem 0; }
-form, article { display: grid; gap: 1rem; padding: 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .75rem; margin: 1rem 0; }
-label { display: grid; gap: .35rem; font-weight: 600; }
-input, select, button { font: inherit; padding: .65rem; border: 1px solid #b8c8cf; border-radius: .4rem; }
-button { cursor: pointer; background: #147d92; color: white; border: 0; }
-article { grid-template-columns: 1fr auto; align-items: center; }
-article p { color: #52616b; margin: .4rem 0; }
-.error { color: #a22626; }
-.selected { border-color: #147d92; }
-.repository-name, .page-link, .citation { color: #147d92; background: transparent; padding: 0; text-align: left; }
-.repository-name { font-size: 1.15rem; font-weight: 700; }
-.operator { margin-top: 2rem; }
-.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1rem; }
+button, input, select { font: inherit; }
+button { cursor: pointer; background: #147d92; color: white; border: 0; border-radius: .45rem; padding: .65rem .9rem; }
+input, select { padding: .65rem; border: 1px solid #b8c8cf; border-radius: .4rem; background: white; }
+label { display: grid; gap: .35rem; font-weight: 650; }
+h1, h2, h3, p { margin-top: 0; }
+.eyebrow { color: #147d92; font-size: .78rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.reader-shell, .operator-shell { max-width: 76rem; margin: 0 auto; padding: 2rem; }
+.reader-header, .operator-header { display: flex; align-items: start; justify-content: space-between; gap: 2rem; padding: 3rem 0 2rem; }
+.reader-header h1 { max-width: 42rem; font-size: clamp(2.4rem, 6vw, 4.6rem); line-height: 1.02; letter-spacing: -.045em; margin-bottom: 0; }
+.operator-header h1 { font-size: clamp(2rem, 5vw, 3.4rem); margin-bottom: .5rem; }
+.quiet-button { color: #147d92; background: transparent; border: 1px solid #9bc4ce; white-space: nowrap; }
+.repository-bar { display: flex; align-items: end; gap: 1.5rem; padding: 1rem 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .8rem; }
+.repository-bar p { margin: 0 0 .65rem; color: #52616b; }
+.repository-select { min-width: min(100%, 25rem); }
+.reader-empty { max-width: 38rem; margin: 10vh auto; padding: 2rem; background: white; border: 1px solid #d9e2e7; border-radius: .8rem; }
+.reader-empty p { color: #52616b; }
+.wiki-layout { display: grid; grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr); gap: 3rem; margin-top: 2.5rem; }
+.page-navigation { align-self: start; position: sticky; top: 1.5rem; }
+.page-link { display: block; width: 100%; color: #41525c; background: transparent; text-align: left; padding: .65rem .75rem; border-radius: .35rem; }
+.page-link:hover, .page-link.active { color: #0d5260; background: #dff0f3; font-weight: 700; }
+.reader-page { min-width: 0; padding: 0 0 4rem; }
+.reader-page h2 { font-size: clamp(2rem, 4vw, 3.25rem); letter-spacing: -.035em; margin-bottom: 1.5rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f0f4f5; padding: 1rem; border-radius: .45rem; }
+.reader-page > pre { font-family: ui-serif, Georgia, serif; font-size: 1rem; line-height: 1.75; background: transparent; padding: 0; }
+.citations { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid #d9e2e7; }
+.citations h3 { font-size: .9rem; color: #52616b; }
+.citation { display: inline-block; margin: 0 .75rem .5rem 0; padding: 0; color: #147d92; background: transparent; text-decoration: underline; }
+.operator-shell { max-width: 66rem; }
+.dashboard-section { margin: 2rem 0; }
+form, .repository-card, .run, .page-preview, .source { display: grid; gap: 1rem; padding: 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .75rem; margin: 1rem 0; }
+.repository-card { grid-template-columns: 1fr auto; align-items: center; }
+.repository-card p, .run p, .source p, .page-preview p { color: #52616b; margin-bottom: 0; }
+.repository-name { color: #147d92; background: transparent; padding: 0; font-size: 1.15rem; font-weight: 700; }
+.selected { border-color: #147d92; box-shadow: 0 0 0 1px #147d92; }
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1.5rem; }
 .run { grid-template-columns: 1fr; }
 .run.running { border-left: .4rem solid #c28112; }
 .run.failed { border-left: .4rem solid #a22626; }
 .run.available { border-left: .4rem solid #147d92; }
-.page-link, .citation { display: block; margin: .7rem 0; text-decoration: underline; }
-.citation { display: inline-block; margin-right: 1rem; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f4f7f9; padding: 1rem; border-radius: .4rem; }
+.error { color: #a22626; }
 .diagram { display: block; max-width: 100%; background: #fff; }
+@media (max-width: 700px) { .reader-shell, .operator-shell { padding: 1.25rem; } .reader-header, .operator-header, .repository-bar { display: grid; gap: 1rem; } .wiki-layout { grid-template-columns: 1fr; gap: 1.5rem; } .page-navigation { position: static; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); } .page-navigation .eyebrow { grid-column: 1 / -1; } .repository-card { grid-template-columns: 1fr; } }
