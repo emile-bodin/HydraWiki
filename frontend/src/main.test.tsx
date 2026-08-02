@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { App, citationLabel, runState } from "./main";
+import { App, citationLabel, progressValue, runState } from "./main";
 
 const repository = {
   id: "repo-1", source_type: "public_git", source_value: "https://github.com/example/repo.git",
@@ -46,6 +46,7 @@ test("shows durable progress, keeps failed generation separate from published pa
   await screen.findByText("Example");
   fireEvent.click(screen.getByRole("button", { name: "Example" }));
   await screen.findByText("Embedding: 3 / 5 (60%)");
+  expect(screen.getByRole("progressbar", { name: "Embedding progress" })).toHaveAttribute("value", "60");
   expect(screen.getByText("failed: failed")).toBeInTheDocument();
   expect(screen.getByText("Mermaid validation failed: invalid syntax")).toBeInTheDocument();
   expect(screen.getByText((_, element) => element?.tagName === "PRE" && element.textContent === "flowchart TD\nA-->B")).toBeInTheDocument();
@@ -65,6 +66,47 @@ test("formats citations and run states without inventing success", () => {
   expect(runState("running")).toBe("running");
   expect(runState("failed")).toBe("failed");
   expect(runState("succeeded")).toBe("available");
+  expect(progressValue(125)).toBe(100);
+  expect(progressValue(-1)).toBe(0);
+});
+
+test("starts ingestion and shows the returned running progress", async () => {
+  const runningRun = { id: "run-2", status: "running", phase: "Scanning", current_count: 37, total_count: 61, percentage: 61, error: null, started_at: "2026-08-02T10:00:00Z", completed_at: null };
+  let ingestionRuns: typeof runningRun[] = [];
+  const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
+    if (input === "/api/repositories/repo-1/ingestion-runs") return new Response(JSON.stringify(ingestionRuns), { status: 200 });
+    if (input === "/api/repositories/repo-1/generation-runs" || input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([]), { status: 200 });
+    if (input === "/api/repositories/repo-1/sync" && init?.method === "POST") { ingestionRuns = [runningRun]; return new Response(JSON.stringify(runningRun), { status: 201 }); }
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
+  await screen.findByRole("button", { name: "Start ingestion" });
+  fireEvent.click(screen.getByRole("button", { name: "Start ingestion" }));
+
+  await screen.findByText("Scanning: 37 / 61 (61%)");
+  expect(screen.getByRole("progressbar", { name: "Scanning progress" })).toHaveAttribute("value", "61");
+  expect(screen.getByRole("button", { name: "Ingestion running" })).toBeDisabled();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1/sync", { method: "POST" }));
+});
+
+test("shows an operator error when ingestion is already running", async () => {
+  const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
+    if (input === "/api/repositories/repo-1/ingestion-runs" || input === "/api/repositories/repo-1/generation-runs" || input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([]), { status: 200 });
+    if (input === "/api/repositories/repo-1/sync" && init?.method === "POST") return new Response(JSON.stringify({ detail: "An ingestion run is already running" }), { status: 409 });
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Start ingestion" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("An ingestion run is already running");
 });
 
 test("registers a Public Git repository and refreshes the registered list", async () => {
