@@ -93,6 +93,77 @@ test("starts ingestion and shows the returned running progress", async () => {
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1/sync", { method: "POST" }));
 });
 
+test("starts generation and refreshes published pages after success", async () => {
+  const runningGeneration = { id: "generation-1", repository_id: "repo-1", page_path: "overview", status: "running", source_selection: null, configured_model: "wiki-model", provider_model: null, prompt_version: "v1", error: null, started_at: "2026-08-02T10:00:00Z", completed_at: null, diagrams: [] };
+  const succeededGeneration = { ...runningGeneration, status: "succeeded", provider_model: "provider-wiki-model", completed_at: "2026-08-02T10:01:00Z" };
+  let generationRuns: object[] = [];
+  let pages: object[] = [];
+  const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
+    if (input === "/api/repositories/repo-1/ingestion-runs") return new Response(JSON.stringify([]), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages" && init?.method === "POST") {
+      generationRuns = [succeededGeneration];
+      pages = [{ path: "overview", title: "HydraWiki Overview", lifecycle_status: "published", generation_run_id: "generation-1" }];
+      return new Response(JSON.stringify(succeededGeneration), { status: 201 });
+    }
+    if (input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify(generationRuns), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify(pages), { status: 200 });
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate wiki page" }));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1/pages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "overview", title: "HydraWiki Overview", source_paths: null }),
+  }));
+  await screen.findByText("Provider model: provider-wiki-model");
+  expect(fetchMock.mock.calls.filter(([path]) => path === "/api/repositories/repo-1/pages").length).toBeGreaterThan(1);
+});
+
+test("shows running, succeeded, and failed generation details without numeric generation progress", async () => {
+  const runningGeneration = { id: "generation-running", repository_id: "repo-1", page_path: "draft", status: "running", source_selection: null, configured_model: "wiki-model", provider_model: null, prompt_version: "v1", error: null, started_at: "2026-08-02T10:00:00Z", completed_at: null, diagrams: [] };
+  const succeededGeneration = { ...runningGeneration, id: "generation-succeeded", page_path: "overview", status: "succeeded", provider_model: "provider-wiki-model", completed_at: "2026-08-02T10:01:00Z" };
+  const failedGeneration = { id: "generation-failed", repository_id: "repo-1", page_path: "overview", status: "failed", source_selection: null, configured_model: "wiki-model", provider_model: null, prompt_version: "v2", error: "provider unavailable", started_at: "2026-08-02T10:00:00Z", completed_at: "2026-08-02T10:01:00Z", diagrams: [] };
+  const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
+    if (input === "/api/repositories/repo-1/ingestion-runs") return new Response(JSON.stringify([]), { status: 200 });
+    if (input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify([runningGeneration, succeededGeneration, failedGeneration]), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([]), { status: 200 });
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
+  expect(await screen.findByText("draft: running")).toBeInTheDocument();
+  expect(screen.getByRole("progressbar", { name: "draft generation is running" })).not.toHaveAttribute("value");
+  expect(screen.getByText("overview: succeeded")).toBeInTheDocument();
+  expect(screen.getByText("overview: failed")).toBeInTheDocument();
+  expect(screen.getAllByText("Configured model: wiki-model")).toHaveLength(3);
+  expect(screen.getByText("Prompt version: v2")).toBeInTheDocument();
+  expect(screen.getByText("provider unavailable")).toBeInTheDocument();
+});
+
+test("shows a visible generation API error", async () => {
+  const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages" && init?.method === "POST") return new Response(JSON.stringify({ detail: "A generation run is already running" }), { status: 409 });
+    if (input === "/api/repositories/repo-1/ingestion-runs" || input === "/api/repositories/repo-1/generation-runs" || input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([]), { status: 200 });
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate wiki page" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("A generation run is already running");
+});
+
 test("shows an operator error when ingestion is already running", async () => {
   const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
     if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
