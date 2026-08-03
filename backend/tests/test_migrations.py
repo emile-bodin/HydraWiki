@@ -32,3 +32,8 @@ def test_mermaid_migration_persists_safe_or_failed_diagrams_only() -> None:
     assert "CREATE TABLE IF NOT EXISTS generation_diagrams" in migration
     assert "status IN ('safe', 'failed')" in migration
     assert "svg IS NOT NULL" in migration
+
+
+def test_generation_failure_stage_migration_is_versioned() -> None:
+    migration = files("hydrawiki.migrations").joinpath("007_generation_failure_stage.sql").read_text()
+    assert "ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS failure_stage" in migration
