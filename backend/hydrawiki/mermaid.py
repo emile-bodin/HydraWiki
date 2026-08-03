@@ -21,6 +21,7 @@ _TEXT = re.compile(r"^[\w .,:;()#+/%'\-–]+$", re.UNICODE)
 _TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "marker", "defs", "title", "desc"}
 _COMMON = {"id", "class", "fill", "stroke", "stroke-width", "opacity", "transform", "aria-roledescription", "role"}
 _ATTRS = {"svg": {"width", "height", "viewBox", "xmlns", "aria-labelledby"}, "path": {"d", "marker-end", "marker-start"}, "rect": {"x", "y", "width", "height", "rx", "ry"}, "circle": {"cx", "cy", "r"}, "ellipse": {"cx", "cy", "rx", "ry"}, "line": {"x1", "x2", "y1", "y2"}, "polyline": {"points"}, "polygon": {"points"}, "text": {"x", "y", "text-anchor", "font-family", "font-size"}, "tspan": {"x", "y", "dx", "dy", "text-anchor"}, "marker": {"markerWidth", "markerHeight", "markerUnits", "refX", "refY", "orient", "viewBox"}}
+_DEFAULT_SHAPE_PRESENTATION = {"fill": "white", "stroke": "#333", "stroke-width": "1"}
 _ROOT_STYLE_VALUE = re.compile(r"(?:max-width:\s*([0-9]{1,5}(?:\.[0-9]{1,4})?)px|background-color:\s*white)")
 _PAINT = re.compile(r"(?:none|currentColor|transparent|white|black|#[0-9A-Fa-f]{3,8})")
 _STROKE_WIDTH = re.compile(r"(?:0|[0-9]{1,3}(?:\.[0-9]{1,3})?)(?:px)?")
@@ -99,6 +100,9 @@ def sanitize_svg(svg: str, max_bytes: int, *, strip_renderer_presentation: bool 
                 local = _local(name)
                 if local == "style" or local.startswith("data-") or local in {"class", "font-style", "font-weight"}:
                     del element.attrib[name]
+            if _local(element.tag) in {"rect", "circle", "ellipse", "polygon"}:
+                for name, value in _DEFAULT_SHAPE_PRESENTATION.items():
+                    element.attrib.setdefault(name, value)
     for element in root.iter():
         tag = _local(element.tag)
         if tag not in _TAGS:
