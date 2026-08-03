@@ -105,6 +105,7 @@ class GenerationRunResponse(BaseModel):
     provider_model: str | None
     prompt_version: str
     error: str | None
+    failure_stage: str | None = None
     started_at: datetime
     completed_at: datetime | None
     diagrams: list[MermaidDiagramResponse] = Field(default_factory=list)

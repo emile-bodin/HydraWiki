@@ -61,12 +61,23 @@ def test_successful_generation_persists_page_artifacts_and_citations(monkeypatch
     assert page["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
     with database.connection() as connection:
         artifacts = list(connection.execute("SELECT artifact_type FROM generation_artifacts WHERE generation_run_id = %s ORDER BY artifact_type", (result.run_id,)))
-        run = connection.execute("SELECT status, source_selection, configured_model, provider_model FROM generation_runs WHERE id = %s", (result.run_id,)).fetchone()
+        run = connection.execute("SELECT status, source_selection, configured_model, provider_model, failure_stage FROM generation_runs WHERE id = %s", (result.run_id,)).fetchone()
     assert [artifact["artifact_type"] for artifact in artifacts] == ["prompt", "response"]
     assert run["status"] == "succeeded"
     assert run["source_selection"][0]["path"] == "app.py"
     assert run["configured_model"] == "fake-model"
     assert run["provider_model"] == "fake-provider-model"
+    assert run["failure_stage"] is None
+
+
+def test_duplicate_citations_are_deduplicated_before_publication(monkeypatch):
+    database, repository, settings = setup_indexed_repository(monkeypatch)
+    FakeGenerator.response = '{"content":"# Overview","citations":[{"path":"app.py","line_start":1,"line_end":3},{"path":"app.py","line_start":1,"line_end":3}]}'
+
+    result = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+
+    assert result.status == "succeeded"
+    assert WikiStore(database).get_page(repository["id"], "overview")["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
 
 
 def test_generation_uses_responses_endpoint_without_bypassing_citation_validation(monkeypatch):
@@ -223,7 +234,9 @@ def test_persistence_failure_preserves_existing_published_page(monkeypatch):
     assert failed.status == "failed"
     preserved = WikiStore(database).get_page(repository["id"], "overview")
     assert preserved["content"] == old_page["content"]
-    assert WikiStore(database).get_run(failed.run_id)["error"] == "wiki page persistence failed"
+    failed_run = WikiStore(database).get_run(failed.run_id)
+    assert failed_run["error"] == "publication failed: RuntimeError"
+    assert failed_run["failure_stage"] == "publication"
 
 
 def test_mermaid_failure_is_durable_and_preserves_prior_publication(monkeypatch):

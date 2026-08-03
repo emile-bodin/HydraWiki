@@ -85,7 +85,7 @@ data for the operator UI:
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/repositories/{id}/ingestion-runs` | Durable manifest runs, including phase and numeric progress |
-| GET | `/api/repositories/{id}/generation-runs` | Durable generation-run status and error data |
+| GET | `/api/repositories/{id}/generation-runs` | Durable generation-run status, failure stage, and error data |
 | GET | `/api/repositories/{id}/sources/{path}` | An existing indexed source file only; it never reads a host path |
 
 No Phase-1 endpoint registers repositories, starts ingestion, indexes content,

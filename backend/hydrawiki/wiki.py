@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib import resources
@@ -15,6 +16,9 @@ from .config import Settings
 from .generation import GenerationError, OpenAICompatibleGenerationAdapter
 from .mermaid import MermaidError, MermaidRenderer, extract_mermaid_sources
 from .persistence import Database
+
+
+logger = logging.getLogger(__name__)
 
 
 class WikiGenerationError(RuntimeError):
@@ -125,11 +129,11 @@ class WikiStore:
                 (uuid4(), run_id, artifact_type, content),
             )
 
-    def fail(self, run_id: UUID, error: str) -> None:
+    def fail(self, run_id: UUID, error: str, failure_stage: str) -> None:
         with self.database.connection() as connection:
             connection.execute(
-                "UPDATE generation_runs SET status = 'failed', error = %s, completed_at = now() WHERE id = %s",
-                (error[:2000], run_id),
+                "UPDATE generation_runs SET status = 'failed', error = %s, failure_stage = %s, completed_at = now() WHERE id = %s",
+                (error[:2000], failure_stage, run_id),
             )
 
     def add_diagram(self, run_id: UUID, ordinal: int, source: str, status: str, svg: str | None = None, error: str | None = None) -> None:
@@ -202,7 +206,7 @@ class WikiStore:
                         (page_id, repository_id, citation.path, citation.line_start, citation.line_end),
                     )
                 connection.execute(
-                    "UPDATE generation_runs SET status = 'succeeded', provider_model = %s, error = NULL, completed_at = now() WHERE id = %s",
+                    "UPDATE generation_runs SET status = 'succeeded', provider_model = %s, error = NULL, failure_stage = NULL, completed_at = now() WHERE id = %s",
                     (provider_model, run_id),
                 )
 
@@ -246,6 +250,17 @@ def _prompt(title: str, sources: list[dict]) -> str:
     return template.replace("__TITLE__", title).replace("__SOURCE_EXCERPTS__", excerpts)
 
 
+def _deduplicate_citations(citations: list[Citation]) -> list[Citation]:
+    seen: set[tuple[str, int, int]] = set()
+    unique: list[Citation] = []
+    for citation in citations:
+        key = (citation.path, citation.line_start, citation.line_end)
+        if key not in seen:
+            seen.add(key)
+            unique.append(citation)
+    return unique
+
+
 def generate_wiki_page(database: Database, settings: Settings, repository_id: UUID, page_path: str, title: str, source_paths: list[str] | None = None) -> WikiGenerationResult:
     with generation_slot(database, settings.generation_max_concurrency):
         return _generate_wiki_page(database, settings, repository_id, page_path, title, source_paths)
@@ -254,33 +269,43 @@ def generate_wiki_page(database: Database, settings: Settings, repository_id: UU
 def _generate_wiki_page(database: Database, settings: Settings, repository_id: UUID, page_path: str, title: str, source_paths: list[str] | None = None) -> WikiGenerationResult:
     store = WikiStore(database)
     run_id: UUID | None = None
+    failure_stage = "start"
     try:
         run_id = store.start(repository_id, page_path, [], settings)
+        failure_stage = "source_selection"
         sources = store.select_sources(repository_id, source_paths, settings.generation_max_source_characters)
         store.set_source_selection(run_id, sources)
+        failure_stage = "prompt"
         prompt = _prompt(title, sources)
         store.add_artifact(run_id, "prompt", prompt)
         if not settings.generation_url or not settings.generation_model:
             raise WikiGenerationError("generation adapter is not configured")
         api_key = settings.generation_api_key.get_secret_value() if settings.generation_api_key else None
+        failure_stage = "generation"
         generated = OpenAICompatibleGenerationAdapter(str(settings.generation_url), settings.generation_model, api_key, settings.generation_timeout_seconds, settings.generation_max_output_tokens).generate(prompt)
         store.add_artifact(run_id, "response", generated.content)
+        failure_stage = "response_validation"
         try:
             document = GeneratedDocument.model_validate(json.loads(generated.content))
         except (json.JSONDecodeError, ValidationError) as exc:
             raise WikiGenerationError("generation response did not contain a valid cited page") from exc
+        document = GeneratedDocument(content=document.content, citations=_deduplicate_citations(document.citations))
+        failure_stage = "citation_validation"
         store.validate_citations(repository_id, document.citations, sources)
+        failure_stage = "mermaid_validation"
         store.validate_mermaid(run_id, document.content, settings)
+        failure_stage = "publication"
         store.publish(run_id, repository_id, page_path, title, document, generated.model)
         return WikiGenerationResult(run_id, "succeeded")
     except (GenerationError, WikiGenerationError) as exc:
         error = str(exc)
-    except Exception:
-        error = "wiki page persistence failed"
+    except Exception as exc:
+        logger.exception("wiki page generation failed", extra={"generation_run_id": str(run_id) if run_id else None, "failure_stage": failure_stage})
+        error = f"{failure_stage} failed: {type(exc).__name__}"
     if run_id is not None:
         try:
             store.add_artifact(run_id, "validation_error", error)
-            store.fail(run_id, error)
+            store.fail(run_id, error, failure_stage)
         except Exception:
             # A database outage cannot be masked as a successful publication.
             pass
