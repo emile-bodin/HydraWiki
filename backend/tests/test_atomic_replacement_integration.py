@@ -16,6 +16,11 @@ DATABASE_URL = os.getenv("HYDRAWIKI_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="set HYDRAWIKI_TEST_DATABASE_URL for PostgreSQL integration tests")
 
 
+def connection_rows(database: Database, query: str, value):
+    with database.connection() as connection:
+        return list(connection.execute(query, (value,)))
+
+
 class FakeEmbedding:
     fail_prompt = None
 

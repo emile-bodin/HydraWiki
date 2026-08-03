@@ -16,6 +16,38 @@ DATABASE_URL = os.getenv("HYDRAWIKI_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="set HYDRAWIKI_TEST_DATABASE_URL for PostgreSQL integration tests")
 
 
+class FakeEmbedding:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def embed(self, text):
+        return type("Result", (), {"vector": [float(len(text)), 1.0]})()
+
+
+class FakeVectors:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def ensure_collection(self, _dimension):
+        pass
+
+    def upsert(self, _points):
+        pass
+
+    def set_payload(self, _vector_ids, _payload):
+        pass
+
+    def delete(self, _vector_ids):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def isolate_external_index_adapters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Database lifecycle tests do not require a deployed Ollama or Qdrant."""
+    monkeypatch.setattr("hydrawiki.indexing.OllamaEmbeddingAdapter", FakeEmbedding)
+    monkeypatch.setattr("hydrawiki.indexing.QdrantVectorStore", FakeVectors)
+
+
 def test_manifest_delta_is_atomic_reusable_and_survives_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert DATABASE_URL
     root = tmp_path / "repositories"

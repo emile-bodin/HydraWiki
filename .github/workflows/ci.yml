@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: hydrawiki
+          POSTGRES_USER: hydrawiki
+          POSTGRES_PASSWORD: test-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hydrawiki -d hydrawiki"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Backend unit tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "backend[test]"
+          python -m pytest backend/tests -q
+      - name: PostgreSQL lifecycle tests
+        env:
+          HYDRAWIKI_TEST_DATABASE_URL: postgresql://hydrawiki:test-password@localhost:5432/hydrawiki
+        run: python -m pytest backend/tests/test_manifest_integration.py backend/tests/test_atomic_replacement_integration.py -q
+      - name: Frontend tests and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Compose configuration and container Mermaid smoke test
+        env:
+          HYDRAWIKI_DATABASE_URL: postgresql://hydrawiki:test-password@postgres:5432/hydrawiki
+          HYDRAWIKI_POSTGRES_PASSWORD: test-password
+        run: |
+          docker compose config -q
+          docker compose build api
+          docker run --rm --security-opt seccomp=unconfined --entrypoint sh hydra-wiki-api -lc 'python -c "from hydrawiki.mermaid import MermaidRenderer; assert MermaidRenderer(\"mmdc\", 15, 1000, 2000000).render(\"flowchart TD\\nA-->B\").svg"'
+      - name: Diff hygiene
+        run: git diff --check
