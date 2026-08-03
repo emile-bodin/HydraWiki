@@ -25,7 +25,8 @@ _ROOT_STYLE_VALUE = re.compile(r"(?:max-width:\s*([0-9]{1,5}(?:\.[0-9]{1,4})?)px
 _PAINT = re.compile(r"(?:none|currentColor|transparent|white|black|#[0-9A-Fa-f]{3,8})")
 _STROKE_WIDTH = re.compile(r"(?:0|[0-9]{1,3}(?:\.[0-9]{1,3})?)(?:px)?")
 _OPACITY = re.compile(r"(?:0(?:\.\d{1,3})?|1(?:\.0{1,3})?)")
-_TRANSFORM = re.compile(r"(?:translate|scale|rotate)\([ -]?[0-9]{1,5}(?:\.\d{1,4})?(?:[ ,]+-?[0-9]{1,5}(?:\.\d{1,4})?){0,2}\)(?:\s+(?:translate|scale|rotate)\([ -]?[0-9]{1,5}(?:\.\d{1,4})?(?:[ ,]+-?[0-9]{1,5}(?:\.\d{1,4})?){0,2}\)){0,7}")
+_TRANSFORM_NUMBER = r"-?[0-9]{1,5}(?:\.\d{1,16})?"
+_TRANSFORM = re.compile(rf"(?:translate|scale|rotate)\({_TRANSFORM_NUMBER}(?:[ ,]+{_TRANSFORM_NUMBER}){{0,2}}\)(?:\s+(?:translate|scale|rotate)\({_TRANSFORM_NUMBER}(?:[ ,]+{_TRANSFORM_NUMBER}){{0,2}}\)){{0,7}}")
 
 
 @dataclass(frozen=True)
