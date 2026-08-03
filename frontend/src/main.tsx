@@ -67,59 +67,99 @@ export function SafeDiagram({ diagram }: { diagram: MermaidDiagram }) {
   return <img className="diagram" alt="Validated Mermaid diagram" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(diagram.svg)}`} />;
 }
 
-function renderDocument(content: string) {
-  const lines = content.split("\n");
+function safeMarkdownUrl(value: string | undefined) {
+  const url = value?.trim() ?? "";
+  return /^(https?:|mailto:|\/|#)/i.test(url) ? url : undefined;
+}
+
+function renderInline(value: string, keyPrefix: string): JSX.Element[] {
+  const token = /!\[([^\]]*)\]\((\S+?)(?:\s+["']([^"']*)["'])?\)|\[([^\]]+)\]\((\S+?)(?:\s+["']([^"']*)["'])?\)|`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*]+)\*|_([^_]+)_/g;
+  const result: JSX.Element[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let index = 0;
+  while ((match = token.exec(value))) {
+    if (match.index > cursor) result.push(<span key={`${keyPrefix}-text-${index++}`}>{value.slice(cursor, match.index)}</span>);
+    const imageUrl = safeMarkdownUrl(match[2]);
+    const linkUrl = safeMarkdownUrl(match[5]);
+    if (match[1] && imageUrl) result.push(<img key={`${keyPrefix}-image-${index++}`} src={imageUrl} alt={match[1]} title={match[3]} />);
+    else if (match[4] && linkUrl) result.push(<a key={`${keyPrefix}-link-${index++}`} href={linkUrl} title={match[6]} target={/^https?:/i.test(linkUrl) ? "_blank" : undefined} rel={/^https?:/i.test(linkUrl) ? "noreferrer" : undefined}>{match[4]}</a>);
+    else if (match[7]) result.push(<code key={`${keyPrefix}-code-${index++}`}>{match[7]}</code>);
+    else if (match[8] || match[9]) result.push(<strong key={`${keyPrefix}-strong-${index++}`}>{match[8] ?? match[9]}</strong>);
+    else if (match[10]) result.push(<del key={`${keyPrefix}-del-${index++}`}>{match[10]}</del>);
+    else if (match[11] || match[12]) result.push(<em key={`${keyPrefix}-em-${index++}`}>{match[11] ?? match[12]}</em>);
+    else result.push(<span key={`${keyPrefix}-literal-${index++}`}>{match[0]}</span>);
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < value.length) result.push(<span key={`${keyPrefix}-text-${index}`}>{value.slice(cursor)}</span>);
+  return result;
+}
+
+function renderList(items: string[], ordered: boolean, key: string) {
+  const List = ordered ? "ol" : "ul";
+  return <List key={key}>{items.map((item, index) => {
+    const task = item.match(/^\[([ xX])\]\s+(.*)$/);
+    return <li key={`${key}-${index}`}>{task && <input type="checkbox" checked={task[1].toLowerCase() === "x"} readOnly aria-label={task[2]} />}{renderInline(task?.[2] ?? item, `${key}-${index}`)}</li>;
+  })}</List>;
+}
+
+export function renderDocument(content: string) {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const blocks: JSX.Element[] = [];
-  let paragraph: string[] = [];
-  let list: string[] = [];
-  let code: string[] = [];
-  let inCode = false;
-
-  const flushParagraph = () => {
-    if (paragraph.length) {
-      blocks.push(<p key={`paragraph-${blocks.length}`}>{paragraph.join(" ")}</p>);
-      paragraph = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) { index += 1; continue; }
+    const fence = line.match(/^\s*(```+|~~~+)\s*([^ ]*)\s*$/);
+    if (fence) {
+      const fenceMarker = fence[1][0];
+      const code: string[] = [];
+      index += 1;
+      while (index < lines.length && !new RegExp(`^\\s*${fenceMarker}{3,}\\s*$`).test(lines[index])) code.push(lines[index++]);
+      if (index < lines.length) index += 1;
+      blocks.push(<pre className="reader-code" data-language={fence[2] || undefined} key={`code-${blocks.length}`}><code>{code.join("\n")}</code></pre>);
+      continue;
     }
-  };
-  const flushList = () => {
-    if (list.length) {
-      blocks.push(<ul key={`list-${blocks.length}`}>{list.map((item) => <li key={item}>{item}</li>)}</ul>);
-      list = [];
+    const heading = line.match(/^\s*(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      const Heading = `h${heading[1].length}` as keyof JSX.IntrinsicElements;
+      blocks.push(<Heading key={`heading-${blocks.length}`}>{renderInline(heading[2], `heading-${blocks.length}`)}</Heading>);
+      index += 1;
+      continue;
     }
-  };
-  const flushCode = () => {
-    if (code.length) {
-      blocks.push(<pre className="reader-code" key={`code-${blocks.length}`}><code>{code.join("\n")}</code></pre>);
-      code = [];
+    if (/^\s*((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/.test(line)) {
+      blocks.push(<hr key={`rule-${blocks.length}`} />); index += 1; continue;
     }
-  };
-
-  lines.forEach((line) => {
-    if (line.trim().startsWith("```")) {
-      if (inCode) flushCode();
-      else { flushParagraph(); flushList(); }
-      inCode = !inCode;
-    } else if (inCode) code.push(line);
-    else if (/^#{1,3} /.test(line)) {
-      flushParagraph();
-      flushList();
-      const level = line.match(/^#+/)?.[0].length ?? 2;
-      const Heading = `h${Math.min(level + 1, 4)}` as keyof JSX.IntrinsicElements;
-      blocks.push(<Heading key={`heading-${blocks.length}`}>{line.replace(/^#+ /, "")}</Heading>);
-    } else if (/^[-*] /.test(line)) {
-      flushParagraph();
-      list.push(line.replace(/^[-*] /, ""));
-    } else if (!line.trim()) {
-      flushParagraph();
-      flushList();
-    } else {
-      flushList();
-      paragraph.push(line.trim());
+    if (/^\s*>/.test(line)) {
+      const quote: string[] = [];
+      while (index < lines.length && /^\s*>/.test(lines[index])) quote.push(lines[index++].replace(/^\s*>\s?/, ""));
+      blocks.push(<blockquote key={`quote-${blocks.length}`}>{renderInline(quote.join(" "), `quote-${blocks.length}`)}</blockquote>);
+      continue;
     }
-  });
-  flushParagraph();
-  flushList();
-  flushCode();
+    const listMatch = line.match(/^\s*([-*+] |\d+[.)] )(.*)$/);
+    if (listMatch) {
+      const ordered = /^\d/.test(listMatch[1]);
+      const items: string[] = [];
+      while (index < lines.length) {
+        const item = lines[index].match(/^\s*([-*+] |\d+[.)] )(.*)$/);
+        if (!item || /^\d/.test(item[1]) !== ordered) break;
+        items.push(item[2]); index += 1;
+      }
+      blocks.push(renderList(items, ordered, `list-${blocks.length}`));
+      continue;
+    }
+    if (index + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1])) {
+      const cells = (value: string) => value.replace(/^\s*\|\s*|\s*\|\s*$/g, "").split(/\s*\|\s*/);
+      const header = cells(line); index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && lines[index].includes("|")) { rows.push(cells(lines[index++])); }
+      blocks.push(<table key={`table-${blocks.length}`}><thead><tr>{header.map((cell, cellIndex) => <th key={cellIndex}>{renderInline(cell, `table-head-${cellIndex}`)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{header.map((_, cellIndex) => <td key={cellIndex}>{renderInline(row[cellIndex] ?? "", `table-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody></table>);
+      continue;
+    }
+    const paragraph: string[] = [line.trim()]; index += 1;
+    while (index < lines.length && lines[index].trim() && !/^\s*(#{1,6})\s+|^\s*```|^\s*~~~|^\s*>|^\s*([-*+] |\d+[.)] )/.test(lines[index])) paragraph.push(lines[index++].trim());
+    blocks.push(<p key={`paragraph-${blocks.length}`}>{renderInline(paragraph.join(" "), `paragraph-${blocks.length}`)}</p>);
+  }
   return blocks;
 }
 

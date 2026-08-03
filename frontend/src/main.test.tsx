@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { App, citationLabel, progressValue, runState } from "./main";
+import { App, citationLabel, progressValue, renderDocument, runState } from "./main";
 
 const repository = {
   id: "repo-1", source_type: "public_git", source_value: "https://github.com/example/repo.git",
@@ -68,6 +68,37 @@ test("formats citations and run states without inventing success", () => {
   expect(runState("succeeded")).toBe("available");
   expect(progressValue(125)).toBe(100);
   expect(progressValue(-1)).toBe(0);
+});
+
+test("renders common Markdown blocks and inline formatting as semantic HTML", () => {
+  render(<article className="reader-content">{renderDocument(`# Guide
+
+Use **HydraWiki** with [the docs](https://example.com/docs) and \`inline code\`.
+
+> Keep generated documentation traceable.
+
+1. Register a repository
+2. Generate a page
+
+| Status | Meaning |
+| --- | --- |
+| **Published** | Ready to read |
+
+~~~bash
+hydrawiki --help
+~~~
+
+---`)}</article>);
+
+  expect(screen.getByRole("heading", { name: "Guide" })).toBeInTheDocument();
+  expect(screen.getByText("HydraWiki").tagName).toBe("STRONG");
+  expect(screen.getByRole("link", { name: "the docs" })).toHaveAttribute("href", "https://example.com/docs");
+  expect(screen.getByRole("blockquote")).toHaveTextContent("Keep generated documentation traceable.");
+  expect(screen.getByRole("list").tagName).toBe("OL");
+  expect(screen.getByRole("table")).toBeInTheDocument();
+  expect(screen.getByText("hydrawiki --help")).toBeInTheDocument();
+  expect(document.querySelector('pre[data-language="bash"]')).toBeInTheDocument();
+  expect(screen.getByRole("separator")).toBeInTheDocument();
 });
 
 test("starts ingestion and shows the returned running progress", async () => {
