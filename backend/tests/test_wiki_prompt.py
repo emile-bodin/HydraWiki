@@ -3,7 +3,7 @@ import pytest
 from hydrawiki.wiki import WikiGenerationError, _load_prompt_template, _prompt
 
 
-def test_wiki_v1_prompt_template_loads_and_renders() -> None:
+def test_wiki_v2_prompt_template_loads_and_renders() -> None:
     sources = [{"path": "src/app.py", "line_start": 10, "line_end": 14, "chunk_text": "def run(): pass"}]
 
     prompt = _prompt("Application overview", sources)
@@ -43,5 +43,5 @@ def test_wiki_prompt_fails_clearly_when_template_cannot_be_loaded(monkeypatch: p
 
     monkeypatch.setattr("hydrawiki.wiki.resources.files", missing_template)
 
-    with pytest.raises(WikiGenerationError, match="wiki-v1 prompt template could not be loaded"):
+    with pytest.raises(WikiGenerationError, match="wiki-v2 prompt template could not be loaded"):
         _prompt("Application overview", [])

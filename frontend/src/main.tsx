@@ -63,8 +63,8 @@ export function progressValue(percentage: number) {
 }
 
 export function SafeDiagram({ diagram }: { diagram: MermaidDiagram }) {
-  if (diagram.status !== "safe" || !diagram.svg) return <><p className="error">Mermaid validation failed: {diagram.error ?? "diagram was not approved"}</p><pre>{diagram.source}</pre></>;
-  return <img className="diagram" alt="Validated Mermaid diagram" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(diagram.svg)}`} />;
+  if (diagram.status !== "safe" || !diagram.svg) return <section className="diagram-card diagram-failed"><p className="error">Mermaid validation failed: {diagram.error ?? "diagram was not approved"}</p><pre>{diagram.source}</pre></section>;
+  return <figure className="diagram-card"><figcaption>Architecture diagram</figcaption><img className="diagram" alt="Validated Mermaid diagram" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(diagram.svg)}`} /></figure>;
 }
 
 function safeMarkdownUrl(value: string | undefined) {
@@ -103,10 +103,19 @@ function renderList(items: string[], ordered: boolean, key: string) {
   })}</List>;
 }
 
-export function renderDocument(content: string) {
+export function documentOutline(content: string) {
+  return content.replace(/\r\n?/g, "\n").split("\n").flatMap((line) => {
+    const heading = line.match(/^\s*(#{2,3})\s+(.+?)\s*#*\s*$/);
+    return heading ? [{ level: heading[1].length, title: heading[2] }] : [];
+  });
+}
+
+export function renderDocument(content: string, diagrams: MermaidDiagram[] = []) {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const blocks: JSX.Element[] = [];
   let index = 0;
+  let diagramOrdinal = 0;
+  let sectionOrdinal = 0;
   while (index < lines.length) {
     const line = lines[index];
     if (!line.trim()) { index += 1; continue; }
@@ -117,13 +126,17 @@ export function renderDocument(content: string) {
       index += 1;
       while (index < lines.length && !new RegExp(`^\\s*${fenceMarker}{3,}\\s*$`).test(lines[index])) code.push(lines[index++]);
       if (index < lines.length) index += 1;
-      blocks.push(<pre className="reader-code" data-language={fence[2] || undefined} key={`code-${blocks.length}`}><code>{code.join("\n")}</code></pre>);
+      if (fence[2].toLowerCase() === "mermaid") {
+        const diagram = diagrams.find((item) => item.ordinal === diagramOrdinal++);
+        blocks.push(diagram ? <SafeDiagram key={`diagram-${blocks.length}`} diagram={diagram} /> : <section className="diagram-card diagram-failed" key={`diagram-${blocks.length}`}><p className="error">Mermaid validation failed: diagram was not approved</p><pre>{code.join("\n")}</pre></section>);
+      } else blocks.push(<pre className="reader-code" data-language={fence[2] || undefined} key={`code-${blocks.length}`}><code>{code.join("\n")}</code></pre>);
       continue;
     }
     const heading = line.match(/^\s*(#{1,6})\s+(.+?)\s*#*\s*$/);
     if (heading) {
       const Heading = `h${heading[1].length}` as keyof JSX.IntrinsicElements;
-      blocks.push(<Heading key={`heading-${blocks.length}`}>{renderInline(heading[2], `heading-${blocks.length}`)}</Heading>);
+      const sectionId = heading[1].length >= 2 && heading[1].length <= 3 ? `section-${sectionOrdinal++}` : undefined;
+      blocks.push(<Heading id={sectionId} key={`heading-${blocks.length}`}>{renderInline(heading[2], `heading-${blocks.length}`)}</Heading>);
       index += 1;
       continue;
     }
@@ -184,7 +197,8 @@ function ReaderView({ repositories, selectedRepository, pages, page, source, loa
     <section className="repository-bar" aria-label="Repository status"><RepositorySelect repositories={repositories} selectedRepository={selectedRepository} select={select} />{selectedRepository && <p><strong>{selectedRepository.display_name}</strong><span> · {selectedRepository.lifecycle_status}</span>{selectedRepository.last_successful_processing_at ? ` · updated ${timestamp(selectedRepository.last_successful_processing_at)}` : ""}</p>}</section>
     {loading ? <section className="reader-empty" aria-live="polite"><p className="eyebrow">Reader</p><h2>Loading your documentation</h2><p>Fetching repositories and published pages.</p></section> : !selectedRepository ? <section className="reader-empty"><p className="eyebrow">Get started</p><h2>Choose a repository to read its wiki</h2><p>Register a repository, index its files, and generate a page from the operator dashboard.</p><button onClick={openOperator}>Open operator dashboard</button></section> : pages.length === 0 ? <section className="reader-empty"><p className="eyebrow">{selectedRepository.display_name}</p><h2>No published pages yet</h2><p>Once ingestion is complete, generate a wiki page from the operator dashboard to see it here.</p><button onClick={openOperator}>Open operator dashboard</button></section> : <section className="wiki-layout">
       <nav className="page-navigation" aria-label="Published pages"><p className="eyebrow">In this wiki</p><h2>{selectedRepository.display_name}</h2><p className="navigation-help">Published pages</p>{pages.map((summary) => <button className={`page-link ${page?.path === summary.path ? "active" : ""}`} key={summary.path} onClick={() => void openPage(summary)}>{summary.title}<span>{summary.path}</span></button>)}</nav>
-      <article className="reader-page">{page ? <><p className="eyebrow">{selectedRepository.display_name} / {page.path}</p><h2>{page.title}</h2><div className="reader-content">{renderDocument(page.content)}</div>{page.diagrams.map((diagram) => <SafeDiagram key={diagram.ordinal} diagram={diagram} />)}{page.citations.length > 0 && <footer className="citations"><div><p className="eyebrow">Traceability</p><h3>Sources</h3><p>Open a citation to inspect the indexed lines behind this page.</p></div><div className="citation-list">{page.citations.map((citation, index) => <button className="citation" key={`${citationLabel(citation)}-${index}`} onClick={() => void openSource(citation)}><span>{citation.path}</span><small>Lines {citation.line_start}–{citation.line_end}</small></button>)}</div></footer>}{source && <aside className="source-drawer" aria-label="Indexed source"><div><p className="eyebrow">Indexed source</p><h3>{source.path}</h3><p>{source.line_count} indexed lines</p></div><pre>{source.content}</pre></aside>}</> : <><h2>Select a page</h2><p>Choose a published page from the navigation to start reading.</p></>}</article>
+      <article className="reader-page">{page ? <><p className="eyebrow">{selectedRepository.display_name} / {page.path}</p><h2>{page.title}</h2><div className="reader-content">{renderDocument(page.content, page.diagrams)}</div>{page.citations.length > 0 && <footer className="citations"><div><p className="eyebrow">Traceability</p><h3>Sources</h3><p>Open a citation to inspect the indexed lines behind this page.</p></div><div className="citation-list">{page.citations.map((citation, index) => <button className="citation" key={`${citationLabel(citation)}-${index}`} onClick={() => void openSource(citation)}><span>{citation.path}</span><small>Lines {citation.line_start}–{citation.line_end}</small></button>)}</div></footer>}{source && <aside className="source-drawer" aria-label="Indexed source"><div><p className="eyebrow">Indexed source</p><h3>{source.path}</h3><p>{source.line_count} indexed lines</p></div><pre>{source.content}</pre></aside>}</> : <><h2>Select a page</h2><p>Choose a published page from the navigation to start reading.</p></>}</article>
+      {page && documentOutline(page.content).length > 0 && <nav className="page-outline" aria-label="On this page"><p className="eyebrow">On this page</p>{documentOutline(page.content).map((heading, index) => <button className={`outline-link level-${heading.level}`} key={`${heading.title}-${index}`} onClick={() => document.getElementById(`section-${index}`)?.scrollIntoView({ behavior: "smooth" })}>{heading.title}</button>)}</nav>}
     </section>}
   </main>;
 }

@@ -236,9 +236,9 @@ class WikiStore:
 
 def _load_prompt_template() -> str:
     try:
-        return resources.files("hydrawiki.prompts").joinpath("wiki-v1.txt").read_text(encoding="utf-8")
+        return resources.files("hydrawiki.prompts").joinpath("wiki-v2.txt").read_text(encoding="utf-8")
     except (FileNotFoundError, ModuleNotFoundError, OSError, UnicodeError) as exc:
-        raise WikiGenerationError("wiki-v1 prompt template could not be loaded") from exc
+        raise WikiGenerationError("wiki-v2 prompt template could not be loaded") from exc
 
 
 def _prompt(title: str, sources: list[dict]) -> str:
@@ -246,7 +246,7 @@ def _prompt(title: str, sources: list[dict]) -> str:
     template = _load_prompt_template()
     missing = [placeholder for placeholder in _PROMPT_PLACEHOLDERS if placeholder not in template]
     if missing:
-        raise WikiGenerationError(f"wiki-v1 prompt template is missing required placeholder(s): {', '.join(missing)}")
+        raise WikiGenerationError(f"wiki-v2 prompt template is missing required placeholder(s): {', '.join(missing)}")
     return template.replace("__TITLE__", title).replace("__SOURCE_EXCERPTS__", excerpts)
 
 

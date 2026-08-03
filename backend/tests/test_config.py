@@ -23,6 +23,7 @@ def test_generation_adapter_configuration_is_optional_and_has_no_default_provide
     settings = Settings(database_url="postgresql://db:5432/hydrawiki", qdrant_url="http://qdrant:6333")
     assert settings.generation_url is None
     assert settings.generation_model is None
+    assert settings.generation_prompt_version == "wiki-v2"
     assert Settings(database_url="postgresql://db:5432/hydrawiki", qdrant_url="http://qdrant:6333", generation_url="", generation_model="").generation_url is None
 
 

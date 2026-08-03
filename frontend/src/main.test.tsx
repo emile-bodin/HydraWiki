@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { App, citationLabel, progressValue, renderDocument, runState } from "./main";
+import { App, citationLabel, documentOutline, progressValue, renderDocument, runState } from "./main";
 
 const repository = {
   id: "repo-1", source_type: "public_git", source_value: "https://github.com/example/repo.git",
@@ -29,7 +29,7 @@ test("shows durable progress, keeps failed generation separate from published pa
       { path: "overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published" },
     ]), { status: 200 });
     if (input === "/api/repositories/repo-1/pages/overview") return new Response(JSON.stringify({
-      id: "page-1", path: "overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published", content: "# Overview",
+      id: "page-1", path: "overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published", content: "# Overview\n\n```mermaid\nflowchart TD\nA-->B\n```",
       citations: [{ path: "src/app.py", line_start: 4, line_end: 8 }], diagrams: [{ ordinal: 0, source: "flowchart TD\nA-->B", status: "safe", svg: "<svg><text>safe</text></svg>", error: null }],
     }), { status: 200 });
     if (input === "/api/repositories/repo-1/sources/src%2Fapp.py") return new Response(JSON.stringify({ path: "src/app.py", line_count: 8, content: "print('indexed')" }), { status: 200 });
@@ -99,6 +99,15 @@ hydrawiki --help
   expect(screen.getByText("hydrawiki --help")).toBeInTheDocument();
   expect(document.querySelector('pre[data-language="bash"]')).toBeInTheDocument();
   expect(screen.getByRole("separator")).toBeInTheDocument();
+});
+
+test("renders validated Mermaid diagrams in their authored position and derives a reader outline", () => {
+  const content = "# Overview\n\n## Architecture overview\n\n```mermaid\nflowchart TD\nA-->B\n```\n\n## Key workflows";
+  render(<article className="reader-content">{renderDocument(content, [{ ordinal: 0, source: "flowchart TD\nA-->B", status: "safe", svg: "<svg><text>safe</text></svg>", error: null }])}</article>);
+
+  expect(screen.getByRole("img", { name: "Validated Mermaid diagram" })).toBeInTheDocument();
+  expect(screen.queryByText("flowchart TD\nA-->B")).not.toBeInTheDocument();
+  expect(documentOutline(content)).toEqual([{ level: 2, title: "Architecture overview" }, { level: 2, title: "Key workflows" }]);
 });
 
 test("starts ingestion and shows the returned running progress", async () => {
