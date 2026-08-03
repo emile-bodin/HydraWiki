@@ -20,7 +20,7 @@ _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")
 _TEXT = re.compile(r"^[\w .,:;()#+/%'\-–]+$", re.UNICODE)
 _TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "marker", "defs", "title", "desc"}
 _COMMON = {"id", "class", "fill", "stroke", "stroke-width", "opacity", "transform", "aria-roledescription", "role"}
-_ATTRS = {"svg": {"width", "height", "viewBox", "xmlns", "aria-labelledby"}, "path": {"d", "marker-end", "marker-start"}, "rect": {"x", "y", "width", "height", "rx", "ry"}, "circle": {"cx", "cy", "r"}, "ellipse": {"cx", "cy", "rx", "ry"}, "line": {"x1", "x2", "y1", "y2"}, "polyline": {"points"}, "polygon": {"points"}, "text": {"x", "y", "text-anchor", "font-family", "font-size"}, "tspan": {"x", "y", "dy"}, "marker": {"markerWidth", "markerHeight", "refX", "refY", "orient", "viewBox"}}
+_ATTRS = {"svg": {"width", "height", "viewBox", "xmlns", "aria-labelledby"}, "path": {"d", "marker-end", "marker-start"}, "rect": {"x", "y", "width", "height", "rx", "ry"}, "circle": {"cx", "cy", "r"}, "ellipse": {"cx", "cy", "rx", "ry"}, "line": {"x1", "x2", "y1", "y2"}, "polyline": {"points"}, "polygon": {"points"}, "text": {"x", "y", "text-anchor", "font-family", "font-size"}, "tspan": {"x", "y", "dx", "dy", "text-anchor"}, "marker": {"markerWidth", "markerHeight", "markerUnits", "refX", "refY", "orient", "viewBox"}}
 _ROOT_STYLE_VALUE = re.compile(r"(?:max-width:\s*([0-9]{1,5}(?:\.[0-9]{1,4})?)px|background-color:\s*white)")
 _PAINT = re.compile(r"(?:none|currentColor|transparent|white|black|#[0-9A-Fa-f]{3,8})")
 _STROKE_WIDTH = re.compile(r"(?:0|[0-9]{1,3}(?:\.[0-9]{1,3})?)(?:px)?")
@@ -73,7 +73,7 @@ def _validate_presentation_attribute(name: str, value: str) -> None:
         raise MermaidError("Mermaid renderer produced unsafe SVG presentation attributes")
 
 
-def sanitize_svg(svg: str, max_bytes: int) -> str:
+def sanitize_svg(svg: str, max_bytes: int, *, strip_renderer_presentation: bool = False) -> str:
     """Reject, rather than repair, renderer output outside the inert SVG subset."""
     if not svg or len(svg.encode()) > max_bytes:
         raise MermaidError("Mermaid renderer produced an oversized SVG")
@@ -85,6 +85,19 @@ def sanitize_svg(svg: str, max_bytes: int) -> str:
         raise MermaidError("Mermaid renderer produced invalid SVG") from exc
     if _local(root.tag) != "svg":
         raise MermaidError("Mermaid renderer did not produce an SVG root")
+    if strip_renderer_presentation:
+        # Mermaid CLI emits CSS and SVG filters even with strict mode. Its
+        # locked configuration prevents diagram input from altering these
+        # renderer-owned layers; remove them before inert-SVG validation.
+        for parent in root.iter():
+            for child in list(parent):
+                if _local(child.tag) in {"style", "filter"}:
+                    parent.remove(child)
+        for element in root.iter():
+            for name in list(element.attrib):
+                local = _local(name)
+                if local == "style" or local.startswith("data-") or local in {"class", "font-style", "font-weight"}:
+                    del element.attrib[name]
     for element in root.iter():
         tag = _local(element.tag)
         if tag not in _TAGS:
@@ -128,7 +141,7 @@ class MermaidRenderer:
             os.chown(root, renderer_user.pw_uid, renderer_user.pw_gid)
             input_path, output_path, config_path, browser_path = root / "diagram.mmd", root / "diagram.svg", root / "config.json", root / "browser.json"
             input_path.write_text(source, encoding="utf-8")
-            config_path.write_text('{"securityLevel":"strict","flowchart":{"htmlLabels":false}}', encoding="utf-8")
+            config_path.write_text('{"securityLevel":"strict","htmlLabels":false,"secure":["securityLevel","htmlLabels"]}', encoding="utf-8")
             browser_path.write_text("{}", encoding="utf-8")
             for path in (input_path, config_path, browser_path):
                 os.chown(path, renderer_user.pw_uid, renderer_user.pw_gid)
@@ -148,4 +161,4 @@ class MermaidRenderer:
                 svg = output_path.read_text(encoding="utf-8")
             except OSError as exc:
                 raise MermaidError("Mermaid renderer produced no SVG") from exc
-        return RenderedDiagram(source, sanitize_svg(svg, self.max_svg_bytes))
+        return RenderedDiagram(source, sanitize_svg(svg, self.max_svg_bytes, strip_renderer_presentation=True))

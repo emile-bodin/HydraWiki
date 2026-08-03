@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from .config import Settings, validate_settings
-from .health import HealthResponse, liveness, readiness
+from .health import HealthResponse, ReadinessError, liveness, readiness
 from .manifest import ManifestBusyError, ManifestStore, run_manifest
 from .persistence import Database, RepositoryStore
 from .sources import LocalRepositoryAdapter, PublicGitRepositoryAdapter, SourceValidationError
@@ -140,7 +140,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health/ready", response_model=HealthResponse, tags=["health"])
     def health_ready() -> HealthResponse:
-        return readiness(app.state.settings or validate_settings())
+        try:
+            return readiness(app.state.settings or validate_settings())
+        except ReadinessError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
     @app.post("/api/repositories", response_model=RepositoryResponse, status_code=status.HTTP_201_CREATED)
     def register_repository(request: RepositoryRegistration) -> RepositoryResponse:

@@ -9,6 +9,8 @@ services:
 
   api:
     build: ./backend
+    security_opt:
+      - seccomp=unconfined
     environment:
       HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
       HYDRAWIKI_QDRANT_URL: "${HYDRAWIKI_QDRANT_URL:-http://qdrant:6333}"
@@ -51,6 +53,8 @@ services:
 
   worker:
     build: ./backend
+    security_opt:
+      - seccomp=unconfined
     command: ["python", "-m", "hydrawiki.worker"]
     environment:
       HYDRAWIKI_DATABASE_URL: "${HYDRAWIKI_DATABASE_URL:?HYDRAWIKI_DATABASE_URL must be set externally}"
