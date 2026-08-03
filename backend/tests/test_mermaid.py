@@ -32,6 +32,11 @@ def test_standard_mermaid_root_style_is_an_inert_safe_subset():
     assert 'style="max-width: 86.6562px; background-color: white;"' in sanitize_svg(svg, 1000)
 
 
+def test_renderer_precision_transform_is_an_inert_safe_subset():
+    svg = '<svg><g transform="translate(123.765625, 239.29999923706055)" /></svg>'
+    assert 'transform="translate(123.765625, 239.29999923706055)"' in sanitize_svg(svg, 1000)
+
+
 @pytest.mark.skipif(shutil.which("mmdc") is None, reason="real Mermaid CLI unavailable; run the container validation command documented in the PR")
 def test_real_pinned_mermaid_cli_output_is_safe():
     renderer = MermaidRenderer("mmdc", 15, 1_000, 2_000_000, user="hydrawiki-renderer")
