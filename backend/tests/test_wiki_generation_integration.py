@@ -48,7 +48,12 @@ def setup_indexed_repository(monkeypatch):
         connection.execute("INSERT INTO index_versions (index_version, embedding_model, vector_dimension) VALUES ('test-index', 'test-model', 2) ON CONFLICT DO NOTHING")
         connection.execute("""INSERT INTO chunks (id, repository_id, path, content_sha256, ordinal, chunk_text, chunk_sha256, line_start, line_end, chunker_version, embedding_model, index_version, vector_id)
         VALUES (%s, %s, 'app.py', %s, 0, 'first\\nsecond\\nthird\\n', 'chunk', 1, 3, 'line-v1', 'test-model', 'test-index', %s)""", (chunk_id, repository["id"], content_hash, str(uuid4())))
-    settings = Settings(database_url=DATABASE_URL, qdrant_url="http://fake-litellm:4000/v1/chat/completions", generation_model="fake-model")
+    settings = Settings(
+        database_url=DATABASE_URL,
+        qdrant_url="http://qdrant:6333",
+        generation_url="http://fake-litellm:4000/v1/chat/completions",
+        generation_model="fake-model",
+    )
     return database, repository, settings
 
 
