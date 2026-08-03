@@ -24,7 +24,7 @@ Use this heading order when supported by evidence:
 Explain the purpose, users, main value, and external boundaries in two or three sentences.
 
 ## Architecture overview
-Describe the major components and how information or control moves between them. When the excerpts directly support component relationships or a workflow, include one concise `mermaid` fenced diagram at this exact point. Use at most two diagrams in the entire document. Every node and edge must be supported by the excerpts; otherwise omit the diagram.
+Describe the major components and how information or control moves between them. When the excerpts directly support component relationships or a workflow, include one concise `mermaid` fenced diagram at this exact point. Use at most two diagrams in the entire document. Every node and edge must be supported by the excerpts; otherwise omit the diagram. Use standard Mermaid structure only: begin with a diagram declaration such as `flowchart LR` or `sequenceDiagram`; do not use frontmatter `config`, `%%{...}%%` directives, `classDef`, `class`, `style`, `linkStyle`, or `click` syntax.
 
 ## Main components
 Use a Markdown table with `Component`, `Responsibility`, and `Evidence` columns when multiple components are supported. Keep each row concise.
