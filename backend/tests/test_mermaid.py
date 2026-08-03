@@ -1,10 +1,11 @@
 import subprocess
 import shutil
+import json
 from types import SimpleNamespace
 
 import pytest
 
-from hydrawiki.mermaid import MermaidError, MermaidRenderer, sanitize_svg
+from hydrawiki.mermaid import MermaidError, MermaidRenderer, sanitize_svg, validate_mermaid_source
 
 
 SAFE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text x="1" y="2">safe</text></svg>'
@@ -16,6 +17,12 @@ def test_renderer_publishes_only_validated_safe_svg(monkeypatch):
         assert "--no-sandbox" not in command
         browser_config = Path(command[command.index("--puppeteerConfigFile") + 1]).read_text()
         assert "no-sandbox" not in browser_config
+        renderer_config = json.loads(Path(command[command.index("--configFile") + 1]).read_text())
+        assert renderer_config["securityLevel"] == "strict"
+        assert renderer_config["htmlLabels"] is False
+        assert renderer_config["theme"] == "default"
+        assert renderer_config["layout"] == "dagre"
+        assert {"theme", "themeVariables", "themeCSS", "look", "layout", "flowchart", "sequence"} <= set(renderer_config["secure"])
         assert callable(_kwargs["preexec_fn"])
         Path(command[command.index("--output") + 1]).write_text(SAFE_SVG)
         return subprocess.CompletedProcess(command, 0)
@@ -25,6 +32,24 @@ def test_renderer_publishes_only_validated_safe_svg(monkeypatch):
     monkeypatch.setattr("hydrawiki.mermaid.os.chown", lambda *_args: None)
     rendered = MermaidRenderer("mmdc", 1, 100, 1000).render("flowchart TD\nA-->B")
     assert "<svg" in rendered.svg
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        ("%%{init: {'theme': 'dark'}}%%\nflowchart TD\nA-->B", "directives"),
+        ("---\nconfig:\n  theme: dark\n---\nflowchart TD\nA-->B", "per-diagram configuration"),
+        ("flowchart TD\nclassDef danger fill:#f00", "presentation syntax"),
+        ("flowchart TD\nstyle A fill:#f00", "presentation syntax"),
+    ],
+)
+def test_unsupported_presentation_source_is_rejected(source, message):
+    with pytest.raises(MermaidError, match=message):
+        validate_mermaid_source(source)
+
+
+def test_title_only_frontmatter_remains_supported():
+    validate_mermaid_source("---\ntitle: Architecture\n---\nflowchart TD\nA-->B")
 
 
 def test_standard_mermaid_root_style_is_an_inert_safe_subset():

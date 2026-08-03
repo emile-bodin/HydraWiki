@@ -1,6 +1,7 @@
 """Bounded local Mermaid rendering and an intentionally narrow SVG boundary."""
 from __future__ import annotations
 
+import json
 import re
 import os
 import pwd
@@ -16,6 +17,9 @@ class MermaidError(RuntimeError):
 
 
 _FENCE = re.compile(r"^```mermaid[ \t]*\r?\n(.*?)(?:\r?\n)?```[ \t]*$", re.MULTILINE | re.DOTALL)
+_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+_DIRECTIVE = re.compile(r"(?m)^\s*%%\{")
+_PRESENTATION = re.compile(r"(?im)^\s*(?:classDef|class|style|linkStyle|click)\b")
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")
 _TEXT = re.compile(r"^[\w .,:;()#+/%'\-–]+$", re.UNICODE)
 _TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "marker", "defs", "title", "desc"}
@@ -28,6 +32,19 @@ _STROKE_WIDTH = re.compile(r"(?:0|[0-9]{1,3}(?:\.[0-9]{1,3})?)(?:px)?")
 _OPACITY = re.compile(r"(?:0(?:\.\d{1,3})?|1(?:\.0{1,3})?)")
 _TRANSFORM_NUMBER = r"-?[0-9]{1,5}(?:\.\d{1,16})?"
 _TRANSFORM = re.compile(rf"(?:translate|scale|rotate)\({_TRANSFORM_NUMBER}(?:[ ,]+{_TRANSFORM_NUMBER}){{0,2}}\)(?:\s+(?:translate|scale|rotate)\({_TRANSFORM_NUMBER}(?:[ ,]+{_TRANSFORM_NUMBER}){{0,2}}\)){{0,7}}")
+_SITE_CONFIG = {
+    "securityLevel": "strict",
+    "htmlLabels": False,
+    "theme": "default",
+    "look": "classic",
+    "layout": "dagre",
+    "secure": [
+        "securityLevel", "htmlLabels", "theme", "themeVariables", "themeCSS", "look", "layout",
+        "fontFamily", "fontSize", "wrap", "markdownAutoWrap", "flowchart", "sequence", "gantt",
+        "state", "er", "class", "journey", "pie", "requirement", "gitGraph", "mindmap", "timeline",
+        "quadrantChart", "xyChart", "sankey", "block", "packet", "architecture", "kanban", "radar",
+    ],
+}
 
 
 @dataclass(frozen=True)
@@ -38,6 +55,17 @@ class RenderedDiagram:
 
 def extract_mermaid_sources(content: str) -> list[str]:
     return [match.group(1).strip() for match in _FENCE.finditer(content)]
+
+
+def validate_mermaid_source(source: str) -> None:
+    """Accept portable Mermaid structure, but reject presentation controls we cannot publish safely."""
+    frontmatter = _FRONTMATTER.match(source)
+    if frontmatter and re.search(r"(?m)^\s*config\s*:", frontmatter.group(1)):
+        raise MermaidError("Mermaid per-diagram configuration is not supported")
+    if _DIRECTIVE.search(source):
+        raise MermaidError("Mermaid directives are not supported; use standard diagram syntax")
+    if _PRESENTATION.search(source):
+        raise MermaidError("Mermaid presentation syntax is not supported")
 
 
 def _local(tag: str) -> str:
@@ -137,6 +165,7 @@ class MermaidRenderer:
     def render(self, source: str) -> RenderedDiagram:
         if not source.strip() or len(source) > self.max_source_characters:
             raise MermaidError("Mermaid source exceeds the configured limit")
+        validate_mermaid_source(source)
         try:
             renderer_user = pwd.getpwnam(self.user)
         except KeyError as exc:
@@ -146,7 +175,7 @@ class MermaidRenderer:
             os.chown(root, renderer_user.pw_uid, renderer_user.pw_gid)
             input_path, output_path, config_path, browser_path = root / "diagram.mmd", root / "diagram.svg", root / "config.json", root / "browser.json"
             input_path.write_text(source, encoding="utf-8")
-            config_path.write_text('{"securityLevel":"strict","htmlLabels":false,"secure":["securityLevel","htmlLabels"]}', encoding="utf-8")
+            config_path.write_text(json.dumps(_SITE_CONFIG, separators=(",", ":")), encoding="utf-8")
             browser_path.write_text("{}", encoding="utf-8")
             for path in (input_path, config_path, browser_path):
                 os.chown(path, renderer_user.pw_uid, renderer_user.pw_gid)
