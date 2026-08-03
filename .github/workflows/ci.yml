@@ -37,11 +37,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "backend[test]"
           python -m pytest backend/tests -q
-      - name: PostgreSQL lifecycle tests
+      - name: PostgreSQL and Qdrant lifecycle tests
         env:
           HYDRAWIKI_TEST_DATABASE_URL: postgresql://hydrawiki:test-password@localhost:5432/hydrawiki
           HYDRAWIKI_TEST_QDRANT_URL: http://localhost:6333
-        run: python -m pytest backend/tests/test_manifest_integration.py backend/tests/test_atomic_replacement_integration.py backend/tests/test_real_qdrant_lifecycle_integration.py backend/tests/test_wiki_generation_integration.py -q
+        run: python -m pytest backend/tests/test_real_qdrant_lifecycle_integration.py -q
+      - name: PostgreSQL mocked lifecycle tests
+        env:
+          HYDRAWIKI_TEST_DATABASE_URL: postgresql://hydrawiki:test-password@localhost:5432/hydrawiki
+        run: python -m pytest backend/tests/test_manifest_integration.py backend/tests/test_atomic_replacement_integration.py backend/tests/test_wiki_generation_integration.py -q
       - name: Frontend tests and build
         working-directory: frontend
         run: |
@@ -55,6 +59,6 @@ jobs:
         run: |
           docker compose config -q
           docker compose build api
-          docker run --rm --security-opt seccomp=unconfined --entrypoint sh hydra-wiki-api -lc 'python -c "from hydrawiki.mermaid import MermaidRenderer; assert MermaidRenderer(\"mmdc\", 15, 1000, 2000000).render(\"flowchart TD\\nA-->B\").svg"'
+          docker compose run --rm --no-deps --entrypoint sh api -lc 'python -c "from hydrawiki.mermaid import MermaidRenderer; assert MermaidRenderer(\"mmdc\", 15, 1000, 2000000).render(\"flowchart TD\\nA-->B\").svg"'
       - name: Diff hygiene
         run: git diff --check

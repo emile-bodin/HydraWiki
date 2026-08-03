@@ -22,6 +22,7 @@ def test_renderer_publishes_only_validated_safe_svg(monkeypatch):
 
     monkeypatch.setattr("hydrawiki.mermaid.subprocess.run", fake_run)
     monkeypatch.setattr("hydrawiki.mermaid.pwd.getpwnam", lambda _user: SimpleNamespace(pw_uid=12345, pw_gid=12345))
+    monkeypatch.setattr("hydrawiki.mermaid.os.chown", lambda *_args: None)
     rendered = MermaidRenderer("mmdc", 1, 100, 1000).render("flowchart TD\nA-->B")
     assert "<svg" in rendered.svg
 
@@ -68,6 +69,7 @@ def test_timeout_is_a_render_failure(monkeypatch):
 
     monkeypatch.setattr("hydrawiki.mermaid.subprocess.run", timeout)
     monkeypatch.setattr("hydrawiki.mermaid.pwd.getpwnam", lambda _user: SimpleNamespace(pw_uid=12345, pw_gid=12345))
+    monkeypatch.setattr("hydrawiki.mermaid.os.chown", lambda *_args: None)
     with pytest.raises(MermaidError, match="timed out"):
         MermaidRenderer("mmdc", 1, 100, 1000).render("flowchart TD\nA-->B")
 
