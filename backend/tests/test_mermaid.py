@@ -37,6 +37,14 @@ def test_renderer_precision_transform_is_an_inert_safe_subset():
     assert 'transform="translate(123.765625, 239.29999923706055)"' in sanitize_svg(svg, 1000)
 
 
+def test_renderer_style_removal_keeps_nodes_visible_with_safe_defaults():
+    svg = '<svg><style>.node rect { fill: #ececff; }</style><g class="node"><rect width="100" height="40" /><text x="1" y="2">API</text></g></svg>'
+    sanitized = sanitize_svg(svg, 1000, strip_renderer_presentation=True)
+    assert "<style" not in sanitized
+    assert 'class=' not in sanitized
+    assert '<rect width="100" height="40" fill="white" stroke="#333" stroke-width="1"' in sanitized
+
+
 @pytest.mark.skipif(shutil.which("mmdc") is None, reason="real Mermaid CLI unavailable; run the container validation command documented in the PR")
 def test_real_pinned_mermaid_cli_output_is_safe():
     renderer = MermaidRenderer("mmdc", 15, 1_000, 2_000_000, user="hydrawiki-renderer")
