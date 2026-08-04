@@ -4,42 +4,993 @@ import "./styles.css";
 
 const API = "";
 
-type Repository = { id: string; source_type: "local" | "public_git"; source_value: string; selected_ref: string | null; display_name: string; lifecycle_status: string; last_error: string | null; last_successful_processing_at: string | null; current_error: string | null };
-type IngestionRun = { id: string; status: "running" | "succeeded" | "failed"; phase: string; current_count: number; total_count: number; percentage: number; error: string | null; started_at: string; completed_at: string | null };
-type MermaidDiagram = { ordinal: number; source: string; status: "safe" | "failed"; svg: string | null; error: string | null };
-type GenerationRun = { id: string; repository_id: string; page_path: string; status: "running" | "succeeded" | "failed"; configured_model: string | null; provider_model: string | null; prompt_version: string; error: string | null; failure_stage: string | null; started_at: string; completed_at: string | null; diagrams: MermaidDiagram[] };
-type WikiPageSummary = { path: string; title: string; lifecycle_status: "published"; generation_run_id: string };
+type Repository = {
+  id: string;
+  source_type: "local" | "public_git";
+  source_value: string;
+  selected_ref: string | null;
+  display_name: string;
+  lifecycle_status: string;
+  last_error: string | null;
+  last_successful_processing_at: string | null;
+  current_error: string | null;
+};
+type IngestionRun = {
+  id: string;
+  status: "running" | "succeeded" | "failed";
+  phase: string;
+  current_count: number;
+  total_count: number;
+  percentage: number;
+  error: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+type MermaidDiagram = {
+  ordinal: number;
+  source: string;
+  status: "safe" | "failed";
+  svg: string | null;
+  error: string | null;
+};
+type GenerationRun = {
+  id: string;
+  repository_id: string;
+  page_path: string;
+  status: "running" | "succeeded" | "failed";
+  configured_model: string | null;
+  provider_model: string | null;
+  prompt_version: string;
+  error: string | null;
+  failure_stage: string | null;
+  started_at: string;
+  completed_at: string | null;
+  diagrams: MermaidDiagram[];
+};
+type WikiPageSummary = {
+  path: string;
+  title: string;
+  lifecycle_status: "published";
+  generation_run_id: string;
+};
 type Citation = { path: string; line_start: number; line_end: number };
-type WikiPage = WikiPageSummary & { id: string; content: string; citations: Citation[]; diagrams: MermaidDiagram[] };
+type WikiPage = WikiPageSummary & {
+  id: string;
+  content: string;
+  citations: Citation[];
+  diagrams: MermaidDiagram[];
+};
 type IndexedSource = { path: string; content: string; line_count: number };
-type Route = { name: "home" | "repositories" | "wiki" | "operator"; repositoryId?: string };
+type Route = {
+  name: "home" | "repositories" | "wiki" | "operator";
+  repositoryId?: string;
+};
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> { const response = await fetch(`${API}${path}`, init); if (response.ok) return response.json() as Promise<T>; const body = await response.json().catch(() => null); throw new Error(body?.detail ?? `Request failed (${response.status})`); }
-export const timestamp = (value: string | null) => value ? new Date(value).toLocaleString() : "Not available";
-export const progressValue = (value: number) => Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
-export const citationLabel = (citation: Citation) => `${citation.path}:${citation.line_start}–${citation.line_end}`;
-export const runState = (status: "running" | "succeeded" | "failed") => status === "succeeded" ? "available" : status;
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API}${path}`, init);
+  if (response.ok) return response.json() as Promise<T>;
+  const body = await response.json().catch(() => null);
+  throw new Error(body?.detail ?? `Request failed (${response.status})`);
+}
+export const timestamp = (value: string | null) =>
+  value ? new Date(value).toLocaleString() : "Not available";
+export const progressValue = (value: number) =>
+  Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+export const citationLabel = (citation: Citation) =>
+  `${citation.path}:${citation.line_start}–${citation.line_end}`;
+export const runState = (status: "running" | "succeeded" | "failed") =>
+  status === "succeeded" ? "available" : status;
 
-function routeFromPath(path = window.location.pathname): Route { const wiki = path.match(/^\/repositories\/([^/]+)$/); return wiki ? { name: "wiki", repositoryId: decodeURIComponent(wiki[1]) } : path === "/operator" ? { name: "operator" } : path === "/repositories" ? { name: "repositories" } : { name: "home" }; }
-function href(route: Route) { return route.name === "home" ? "/" : route.name === "repositories" ? "/repositories" : route.name === "operator" ? "/operator" : `/repositories/${encodeURIComponent(route.repositoryId!)}`; }
+function routeFromPath(path = window.location.pathname): Route {
+  const wiki = path.match(/^\/repositories\/([^/]+)$/);
+  return wiki
+    ? { name: "wiki", repositoryId: decodeURIComponent(wiki[1]) }
+    : path === "/operator"
+      ? { name: "operator" }
+      : path === "/repositories"
+        ? { name: "repositories" }
+        : { name: "home" };
+}
+function href(route: Route) {
+  return route.name === "home"
+    ? "/"
+    : route.name === "repositories"
+      ? "/repositories"
+      : route.name === "operator"
+        ? "/operator"
+        : `/repositories/${encodeURIComponent(route.repositoryId!)}`;
+}
 
-function Header({ route, navigate }: { route: Route; navigate: (route: Route) => void }) { return <header className="site-header"><a className="brand" href="/" onClick={(e) => { e.preventDefault(); navigate({ name: "home" }); }}><span aria-hidden="true">◇</span> HydraWiki</a><nav aria-label="Main navigation">{([ ["home", "Home"], ["repositories", "Repositories"], ["operator", "Operator"] ] as const).map(([name, label]) => <a key={name} className={route.name === name || (name === "repositories" && route.name === "wiki") ? "active" : ""} href={href({ name })} onClick={(e) => { e.preventDefault(); navigate({ name }); }}>{label}</a>)}</nav></header>; }
-function NotAvailable({ children }: { children: string | null }) { return <span className={children ? "value" : "not-available"}>{children || "Not available"}</span>; }
-function duration(start: string, end: string | null) { if (!end) return "In progress"; return `${Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000))} seconds`; }
+function Header({
+  route,
+  navigate,
+}: {
+  route: Route;
+  navigate: (route: Route) => void;
+}) {
+  return (
+    <header className="site-header">
+      <a
+        className="brand"
+        href="/"
+        onClick={(e) => {
+          e.preventDefault();
+          navigate({ name: "home" });
+        }}
+      >
+        <span aria-hidden="true">◇</span> HydraWiki
+      </a>
+      <nav aria-label="Main navigation">
+        {(
+          [
+            ["home", "Home"],
+            ["repositories", "Repositories"],
+            ["operator", "Operator"],
+          ] as const
+        ).map(([name, label]) => (
+          <a
+            key={name}
+            className={
+              route.name === name ||
+              (name === "repositories" && route.name === "wiki")
+                ? "active"
+                : ""
+            }
+            href={href({ name })}
+            onClick={(e) => {
+              e.preventDefault();
+              navigate({ name });
+            }}
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+    </header>
+  );
+}
+function NotAvailable({ children }: { children: string | null }) {
+  return (
+    <span className={children ? "value" : "not-available"}>
+      {children || "Not available"}
+    </span>
+  );
+}
+function duration(start: string, end: string | null) {
+  if (!end) return "In progress";
+  return `${Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000))} seconds`;
+}
 
-export function SafeDiagram({ diagram }: { diagram: MermaidDiagram }) { if (diagram.status !== "safe" || !diagram.svg) return <section className="diagram-card diagram-failed" role="status"><strong>Mermaid diagram could not be rendered</strong><p>{diagram.error ?? "The diagram was not approved."}</p><details><summary>Show Mermaid source</summary><pre>{diagram.source}</pre></details></section>; return <figure className="diagram-card"><img alt="Validated Mermaid diagram" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(diagram.svg)}`} /></figure>; }
-function safeUrl(url: string) { return /^(https?:|mailto:|\/|#)/i.test(url.trim()) ? url : undefined; }
-function inline(text: string, key: string): JSX.Element[] { const regex = /\[([^\]]+)\]\(([^ )]+)\)|`([^`]+)`|\*\*([^*]+)\*\*/g; const parts: JSX.Element[] = []; let cursor = 0, index = 0, match: RegExpExecArray | null; while ((match = regex.exec(text))) { if (match.index > cursor) parts.push(<span key={`${key}-${index++}`}>{text.slice(cursor, match.index)}</span>); if (match[1] && safeUrl(match[2])) parts.push(<a key={`${key}-${index++}`} href={safeUrl(match[2])}>{match[1]}</a>); else if (match[3]) parts.push(<code key={`${key}-${index++}`}>{match[3]}</code>); else parts.push(<strong key={`${key}-${index++}`}>{match[4]}</strong>); cursor = match.index + match[0].length; } if (cursor < text.length) parts.push(<span key={`${key}-${index}`}>{text.slice(cursor)}</span>); return parts; }
-export function documentOutline(content: string) { return content.split(/\r?\n/).flatMap((line, index) => { const match = line.match(/^(#{1,3})\s+(.+?)\s*#*$/); return match ? [{ id: `heading-${index}`, level: match[1].length, title: match[2] }] : []; }); }
-export function renderDocument(content: string, diagrams: MermaidDiagram[] = []) { const lines = content.split(/\r?\n/), result: JSX.Element[] = []; let i = 0, diagram = 0; while (i < lines.length) { const line = lines[i]; if (!line.trim()) { i++; continue; } const fence = line.match(/^(```|~~~)\s*(\w*)/); if (fence) { const code: string[] = []; i++; while (i < lines.length && !lines[i].startsWith(fence[1])) code.push(lines[i++]); i++; result.push(fence[2].toLowerCase() === "mermaid" ? <SafeDiagram key={`diagram-${i}`} diagram={diagrams.find((item) => item.ordinal === diagram++) ?? { ordinal: diagram, source: code.join("\n"), status: "failed", svg: null, error: "The generated page has no validated Mermaid artifact." }} /> : <pre className="reader-code" data-language={fence[2]} key={`code-${i}`}><code>{code.join("\n")}</code></pre>); continue; } const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/); if (heading) { const Tag = `h${heading[1].length}` as keyof JSX.IntrinsicElements; result.push(<Tag id={`heading-${i}`} key={`heading-${i}`}>{inline(heading[2], `heading-${i}`)}</Tag>); i++; continue; } if (line.startsWith(">")) { result.push(<blockquote key={`quote-${i}`}>{inline(line.replace(/^>\s?/, ""), `quote-${i}`)}</blockquote>); i++; continue; } if (i + 1 < lines.length && line.includes("|") && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) { const cells = (row: string) => row.replace(/^\||\|$/g, "").split("|").map((x) => x.trim()); const head = cells(line); i += 2; const rows: string[][] = []; while (i < lines.length && lines[i].includes("|")) rows.push(cells(lines[i++])); result.push(<div className="table-wrap" key={`table-${i}`}><table><thead><tr>{head.map((cell) => <th key={cell}>{inline(cell, cell)}</th>)}</tr></thead><tbody>{rows.map((row, ri) => <tr key={ri}>{head.map((_, ci) => <td key={ci}>{inline(row[ci] ?? "", `${ri}-${ci}`)}</td>)}</tr>)}</tbody></table></div>); continue; } const list = line.match(/^\s*([-*+] |\d+\. )(.*)$/); if (list) { const ordered = /^\d/.test(list[1]), items: string[] = []; while (i < lines.length) { const item = lines[i].match(/^\s*([-*+] |\d+\. )(.*)$/); if (!item || /^\d/.test(item[1]) !== ordered) break; items.push(item[2]); i++; } const List = ordered ? "ol" : "ul"; result.push(<List key={`list-${i}`}>{items.map((item, key) => <li key={key}>{inline(item, `list-${key}`)}</li>)}</List>); continue; } result.push(<p key={`p-${i}`}>{inline(line, `p-${i}`)}</p>); i++; } return result; }
+export function SafeDiagram({ diagram }: { diagram: MermaidDiagram }) {
+  if (diagram.status !== "safe" || !diagram.svg)
+    return (
+      <section className="diagram-card diagram-failed" role="status">
+        <strong>Mermaid diagram could not be rendered</strong>
+        <p>{diagram.error ?? "The diagram was not approved."}</p>
+        <details>
+          <summary>Show Mermaid source</summary>
+          <pre>{diagram.source}</pre>
+        </details>
+      </section>
+    );
+  return (
+    <figure className="diagram-card">
+      <img
+        alt="Validated Mermaid diagram"
+        src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(diagram.svg)}`}
+      />
+    </figure>
+  );
+}
+function safeUrl(url: string) {
+  return /^(https?:|mailto:|\/|#)/i.test(url.trim()) ? url : undefined;
+}
+function inline(text: string, key: string): JSX.Element[] {
+  const regex = /\[([^\]]+)\]\(([^ )]+)\)|`([^`]+)`|\*\*([^*]+)\*\*/g;
+  const parts: JSX.Element[] = [];
+  let cursor = 0,
+    index = 0,
+    match: RegExpExecArray | null;
+  while ((match = regex.exec(text))) {
+    if (match.index > cursor)
+      parts.push(
+        <span key={`${key}-${index++}`}>
+          {text.slice(cursor, match.index)}
+        </span>,
+      );
+    if (match[1] && safeUrl(match[2]))
+      parts.push(
+        <a key={`${key}-${index++}`} href={safeUrl(match[2])}>
+          {match[1]}
+        </a>,
+      );
+    else if (match[3])
+      parts.push(<code key={`${key}-${index++}`}>{match[3]}</code>);
+    else parts.push(<strong key={`${key}-${index++}`}>{match[4]}</strong>);
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length)
+    parts.push(<span key={`${key}-${index}`}>{text.slice(cursor)}</span>);
+  return parts;
+}
+export function documentOutline(content: string) {
+  return content.split(/\r?\n/).flatMap((line, index) => {
+    const match = line.match(/^(#{1,3})\s+(.+?)\s*#*$/);
+    return match
+      ? [{ id: `heading-${index}`, level: match[1].length, title: match[2] }]
+      : [];
+  });
+}
+export function renderDocument(
+  content: string,
+  diagrams: MermaidDiagram[] = [],
+) {
+  const lines = content.split(/\r?\n/),
+    result: JSX.Element[] = [];
+  let i = 0,
+    diagram = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+    const fence = line.match(/^(```|~~~)\s*(\w*)/);
+    if (fence) {
+      const code: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith(fence[1]))
+        code.push(lines[i++]);
+      i++;
+      result.push(
+        fence[2].toLowerCase() === "mermaid" ? (
+          <SafeDiagram
+            key={`diagram-${i}`}
+            diagram={
+              diagrams.find((item) => item.ordinal === diagram++) ?? {
+                ordinal: diagram,
+                source: code.join("\n"),
+                status: "failed",
+                svg: null,
+                error: "The generated page has no validated Mermaid artifact.",
+              }
+            }
+          />
+        ) : (
+          <pre
+            className="reader-code"
+            data-language={fence[2]}
+            key={`code-${i}`}
+          >
+            <code>{code.join("\n")}</code>
+          </pre>
+        ),
+      );
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (heading) {
+      const Tag = `h${heading[1].length}` as keyof JSX.IntrinsicElements;
+      result.push(
+        <Tag id={`heading-${i}`} key={`heading-${i}`}>
+          {inline(heading[2], `heading-${i}`)}
+        </Tag>,
+      );
+      i++;
+      continue;
+    }
+    if (line.startsWith(">")) {
+      result.push(
+        <blockquote key={`quote-${i}`}>
+          {inline(line.replace(/^>\s?/, ""), `quote-${i}`)}
+        </blockquote>,
+      );
+      i++;
+      continue;
+    }
+    if (
+      i + 1 < lines.length &&
+      line.includes("|") &&
+      /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])
+    ) {
+      const cells = (row: string) =>
+        row
+          .replace(/^\||\|$/g, "")
+          .split("|")
+          .map((x) => x.trim());
+      const head = cells(line);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].includes("|"))
+        rows.push(cells(lines[i++]));
+      result.push(
+        <div className="table-wrap" key={`table-${i}`}>
+          <table>
+            <thead>
+              <tr>
+                {head.map((cell) => (
+                  <th key={cell}>{inline(cell, cell)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri}>
+                  {head.map((_, ci) => (
+                    <td key={ci}>{inline(row[ci] ?? "", `${ri}-${ci}`)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+    const list = line.match(/^\s*([-*+] |\d+\. )(.*)$/);
+    if (list) {
+      const ordered = /^\d/.test(list[1]),
+        items: string[] = [];
+      while (i < lines.length) {
+        const item = lines[i].match(/^\s*([-*+] |\d+\. )(.*)$/);
+        if (!item || /^\d/.test(item[1]) !== ordered) break;
+        items.push(item[2]);
+        i++;
+      }
+      const List = ordered ? "ol" : "ul";
+      result.push(
+        <List key={`list-${i}`}>
+          {items.map((item, key) => (
+            <li key={key}>{inline(item, `list-${key}`)}</li>
+          ))}
+        </List>,
+      );
+      continue;
+    }
+    result.push(<p key={`p-${i}`}>{inline(line, `p-${i}`)}</p>);
+    i++;
+  }
+  return result;
+}
 
-function Home({ navigate }: { navigate: (route: Route) => void }) { return <main className="home"><section className="hero"><p className="eyebrow">Traceable repository documentation</p><h1>Documentation that stays connected to its source.</h1><p>HydraWiki indexes repositories and generates browseable documentation with source attribution for developers and readers.</p><div className="actions"><button onClick={() => navigate({ name: "repositories" })}>Explore repositories</button><button className="secondary" onClick={() => navigate({ name: "operator" })}>Open operator</button></div></section><section className="flow" aria-label="HydraWiki workflow">{["Register repository", "Ingest repository content", "Generate wiki", "Browse generated documentation"].map((step, i) => <div key={step}><span>{i + 1}</span><strong>{step}</strong></div>)}</section></main>; }
-function Repositories({ repositories, loading, navigate }: { repositories: Repository[]; loading: boolean; navigate: (route: Route) => void }) { return <main className="page-shell"><p className="eyebrow">Documentation library</p><h1>Repositories</h1><p className="intro">Browse documentation generated from registered repository sources.</p>{loading ? <p>Loading repositories…</p> : repositories.length === 0 ? <section className="empty"><h2>No repositories yet</h2><p>Register a repository from the operator workspace to begin.</p><button onClick={() => navigate({ name: "operator" })}>Open operator</button></section> : <section className="repository-grid">{repositories.map((repo) => <article className="repository-card" key={repo.id}><div><p className="eyebrow"><NotAvailable>{repo.source_type}</NotAvailable></p><h2>{repo.display_name || "Not available"}</h2><dl><dt>Source</dt><dd><NotAvailable>{repo.source_value}</NotAvailable></dd><dt>Ref</dt><dd><NotAvailable>{repo.selected_ref}</NotAvailable></dd><dt>Status</dt><dd><NotAvailable>{repo.lifecycle_status}</NotAvailable></dd><dt>Last successful processing</dt><dd>{timestamp(repo.last_successful_processing_at)}</dd></dl></div><button onClick={() => navigate({ name: "wiki", repositoryId: repo.id })}>Open wiki</button></article>)}</section>}</main>; }
+function Home({ navigate }: { navigate: (route: Route) => void }) {
+  return (
+    <main className="home">
+      <section className="hero">
+        <p className="eyebrow">Traceable repository documentation</p>
+        <h1>Documentation that stays connected to its source.</h1>
+        <p>
+          HydraWiki indexes repositories and generates browseable documentation
+          with source attribution for developers and readers.
+        </p>
+        <div className="actions">
+          <button onClick={() => navigate({ name: "repositories" })}>
+            Explore repositories
+          </button>
+          <button
+            className="secondary"
+            onClick={() => navigate({ name: "operator" })}
+          >
+            Open operator
+          </button>
+        </div>
+      </section>
+      <section className="flow" aria-label="HydraWiki workflow">
+        {[
+          "Register repository",
+          "Ingest repository content",
+          "Generate wiki",
+          "Browse generated documentation",
+        ].map((step, i) => (
+          <div key={step}>
+            <span>{i + 1}</span>
+            <strong>{step}</strong>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
+function Repositories({
+  repositories,
+  loading,
+  navigate,
+}: {
+  repositories: Repository[];
+  loading: boolean;
+  navigate: (route: Route) => void;
+}) {
+  return (
+    <main className="page-shell">
+      <p className="eyebrow">Documentation library</p>
+      <h1>Repositories</h1>
+      <p className="intro">
+        Browse documentation generated from registered repository sources.
+      </p>
+      {loading ? (
+        <p>Loading repositories…</p>
+      ) : repositories.length === 0 ? (
+        <section className="empty">
+          <h2>No repositories yet</h2>
+          <p>Register a repository from the operator workspace to begin.</p>
+          <button onClick={() => navigate({ name: "operator" })}>
+            Open operator
+          </button>
+        </section>
+      ) : (
+        <section className="repository-grid">
+          {repositories.map((repo) => (
+            <article className="repository-card" key={repo.id}>
+              <div>
+                <p className="eyebrow">
+                  <NotAvailable>{repo.source_type}</NotAvailable>
+                </p>
+                <h2>{repo.display_name || "Not available"}</h2>
+                <dl>
+                  <dt>Source</dt>
+                  <dd>
+                    <NotAvailable>{repo.source_value}</NotAvailable>
+                  </dd>
+                  <dt>Ref</dt>
+                  <dd>
+                    <NotAvailable>{repo.selected_ref}</NotAvailable>
+                  </dd>
+                  <dt>Status</dt>
+                  <dd>
+                    <NotAvailable>{repo.lifecycle_status}</NotAvailable>
+                  </dd>
+                  <dt>Last successful processing</dt>
+                  <dd>{timestamp(repo.last_successful_processing_at)}</dd>
+                </dl>
+              </div>
+              <button
+                onClick={() =>
+                  navigate({ name: "wiki", repositoryId: repo.id })
+                }
+              >
+                Open wiki
+              </button>
+            </article>
+          ))}
+        </section>
+      )}
+    </main>
+  );
+}
 
-function WikiViewer({ repository, pages, page, source, selectPage, openSource, navigate }: { repository: Repository | null; pages: WikiPageSummary[]; page: WikiPage | null; source: IndexedSource | null; selectPage: (page: WikiPageSummary) => void; openSource: (citation: Citation) => void; navigate: (route: Route) => void }) { const [expanded, setExpanded] = useState(true); const outline = page ? documentOutline(page.content) : []; return <main className="page-shell wiki-shell">{!repository ? <section className="empty"><h1>Repository not available</h1><button onClick={() => navigate({ name: "repositories" })}>Back to repositories</button></section> : <><div className="wiki-identity"><p className="eyebrow">Repository documentation</p><h1>{repository.display_name}</h1><p><NotAvailable>{repository.source_type}</NotAvailable> · <NotAvailable>{repository.source_value}</NotAvailable> · Ref: <NotAvailable>{repository.selected_ref}</NotAvailable></p></div>{pages.length === 0 ? <section className="empty"><h2>No published pages</h2><p>Generate documentation from the operator workspace.</p><button onClick={() => navigate({ name: "operator" })}>Open operator</button></section> : <div className="wiki-layout"><aside className="wiki-nav"><button className="nav-group" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>Published pages <span>{expanded ? "−" : "+"}</span></button>{expanded && pages.map((item) => <button className={page?.path === item.path ? "nav-item active" : "nav-item"} key={item.path} onClick={() => selectPage(item)}><strong>{item.title}</strong><small>{item.path}</small></button>)}</aside><article className="reader-page">{page && <><h2>{page.title}</h2><div className="reader-content">{renderDocument(page.content, page.diagrams)}</div>{page.citations.length > 0 && <section className="citations"><h3>Sources</h3>{page.citations.map((citation, i) => <button key={i} onClick={() => openSource(citation)}>{citationLabel(citation)}</button>)}</section>}{source && <details className="source-drawer" open><summary>Indexed source: {source.path}</summary><pre>{source.content}</pre></details>}</>}</article><aside className="outline" aria-label="On this page">{outline.map((item) => <button className={`level-${item.level}`} key={item.id} onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth" })}>{item.title}</button>)}</aside></div>}</>}</main>; }
+function WikiViewer({
+  repository,
+  pages,
+  page,
+  source,
+  selectPage,
+  openSource,
+  navigate,
+}: {
+  repository: Repository | null;
+  pages: WikiPageSummary[];
+  page: WikiPage | null;
+  source: IndexedSource | null;
+  selectPage: (page: WikiPageSummary) => void;
+  openSource: (citation: Citation) => void;
+  navigate: (route: Route) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const outline = page ? documentOutline(page.content) : [];
+  return (
+    <main className="page-shell wiki-shell">
+      {!repository ? (
+        <section className="empty">
+          <h1>Repository not available</h1>
+          <button onClick={() => navigate({ name: "repositories" })}>
+            Back to repositories
+          </button>
+        </section>
+      ) : (
+        <>
+          <div className="wiki-identity">
+            <p className="eyebrow">Repository documentation</p>
+            <h1>{repository.display_name}</h1>
+            <p>
+              <NotAvailable>{repository.source_type}</NotAvailable> ·{" "}
+              <NotAvailable>{repository.source_value}</NotAvailable> · Ref:{" "}
+              <NotAvailable>{repository.selected_ref}</NotAvailable>
+            </p>
+          </div>
+          {pages.length === 0 ? (
+            <section className="empty">
+              <h2>No published pages</h2>
+              <p>Generate documentation from the operator workspace.</p>
+              <button onClick={() => navigate({ name: "operator" })}>
+                Open operator
+              </button>
+            </section>
+          ) : (
+            <div className="wiki-layout">
+              <aside className="wiki-nav">
+                <button
+                  className="nav-group"
+                  aria-expanded={expanded}
+                  onClick={() => setExpanded(!expanded)}
+                >
+                  Published pages <span>{expanded ? "−" : "+"}</span>
+                </button>
+                {expanded &&
+                  pages.map((item) => (
+                    <button
+                      className={
+                        page?.path === item.path
+                          ? "nav-item active"
+                          : "nav-item"
+                      }
+                      key={item.path}
+                      onClick={() => selectPage(item)}
+                    >
+                      <strong>{item.title}</strong>
+                      <small>{item.path}</small>
+                    </button>
+                  ))}
+              </aside>
+              <article className="reader-page">
+                {page && (
+                  <>
+                    <h2>{page.title}</h2>
+                    <div className="reader-content">
+                      {renderDocument(page.content, page.diagrams)}
+                    </div>
+                    {page.citations.length > 0 && (
+                      <section className="citations">
+                        <h3>Sources</h3>
+                        {page.citations.map((citation, i) => (
+                          <button key={i} onClick={() => openSource(citation)}>
+                            {citationLabel(citation)}
+                          </button>
+                        ))}
+                      </section>
+                    )}
+                    {source && (
+                      <details className="source-drawer" open>
+                        <summary>Indexed source: {source.path}</summary>
+                        <pre>{source.content}</pre>
+                      </details>
+                    )}
+                  </>
+                )}
+              </article>
+              <aside className="outline" aria-label="On this page">
+                {outline.map((item) => (
+                  <button
+                    className={`level-${item.level}`}
+                    key={item.id}
+                    onClick={() =>
+                      document
+                        .getElementById(item.id)
+                        ?.scrollIntoView({ behavior: "smooth" })
+                    }
+                  >
+                    {item.title}
+                  </button>
+                ))}
+              </aside>
+            </div>
+          )}
+        </>
+      )}
+    </main>
+  );
+}
 
-function RunCard({ label, run }: { label: string; run: IngestionRun | GenerationRun | null }) { if (!run) return <article className="run-card"><h3>{label}</h3><p>Not started</p></article>; const ingest = "phase" in run; return <article className={`run-card ${run.status}`}><h3>{label}</h3><p><strong>{run.status}</strong></p>{ingest && <><p>{run.phase}: {run.current_count} / {run.total_count} ({progressValue(run.percentage)}%)</p><progress value={progressValue(run.percentage)} max="100">{progressValue(run.percentage)}%</progress></>}<dl><dt>Started</dt><dd>{timestamp(run.started_at)}</dd><dt>{run.completed_at ? "Duration" : "State"}</dt><dd>{duration(run.started_at, run.completed_at)}</dd></dl>{run.error && <p className="error" role="alert">{run.error}</p>}</article>; }
-function Operator({ repositories, selected, runs, generations, error, select, register, runWorkflow, startIngest, navigate }: { repositories: Repository[]; selected: Repository | null; runs: IngestionRun[]; generations: GenerationRun[]; error: string; select: (repo: Repository) => void; register: (event: FormEvent<HTMLFormElement>) => void; runWorkflow: () => void; startIngest: () => void; navigate: (route: Route) => void }) { const [sourceType, setSourceType] = useState<"local" | "public_git">("local"); const latestIngest = runs[0] ?? null, latestGeneration = generations[0] ?? null; return <main className="page-shell operator"><p className="eyebrow">Operator workspace</p><h1>Generate traceable documentation</h1><p className="intro">The normal workflow ingests current repository content before starting wiki generation.</p>{error && <p className="error" role="alert">{error}</p>}<section className="operator-primary"><label>Repository<select aria-label="Repository" value={selected?.id ?? ""} onChange={(e) => { const repo = repositories.find((item) => item.id === e.target.value); if (repo) select(repo); }}><option value="">Choose a repository</option>{repositories.map((repo) => <option key={repo.id} value={repo.id}>{repo.display_name}</option>)}</select></label>{selected && <div className="source-summary"><strong>{selected.display_name}</strong><span>{selected.source_type} · {selected.source_value} · {selected.selected_ref ?? "Not available"}</span></div>}<button disabled={!selected || latestIngest?.status === "running" || latestGeneration?.status === "running"} onClick={runWorkflow}>Generate wiki</button></section>{selected && <><section className="run-grid"><RunCard label="1. Ingest" run={latestIngest} /><RunCard label="2. Generate" run={latestGeneration} /></section>{latestGeneration?.status === "succeeded" && <button className="secondary" onClick={() => navigate({ name: "wiki", repositoryId: selected.id })}>Open generated documentation</button>}</>}<section className="registration"><h2>Register repository</h2><p>Add a local source or public Git repository to the documentation library.</p><form onSubmit={register}><label>Name<input name="display_name" required /></label><label>Source type<select value={sourceType} onChange={(e) => setSourceType(e.target.value as "local" | "public_git")}><option value="local">Local</option><option value="public_git">Public Git</option></select></label>{sourceType === "local" ? <label>Source path<input name="path" required /></label> : <><label>Git URL<input name="url" type="url" required /></label><label>Ref<input name="ref" required /></label></>}<button>Register repository</button></form></section><details className="advanced"><summary>Advanced actions</summary><button disabled={!selected || latestIngest?.status === "running"} onClick={startIngest}>Run ingest only</button></details></main>; }
+function RunCard({
+  label,
+  run,
+}: {
+  label: string;
+  run: IngestionRun | GenerationRun | null;
+}) {
+  if (!run)
+    return (
+      <article className="run-card">
+        <h3>{label}</h3>
+        <p>Not started</p>
+      </article>
+    );
+  const ingest = "phase" in run;
+  return (
+    <article className={`run-card ${run.status}`}>
+      <h3>{label}</h3>
+      <p>
+        <strong>{run.status}</strong>
+      </p>
+      {ingest && (
+        <>
+          <p>
+            {run.phase}: {run.current_count} / {run.total_count} (
+            {progressValue(run.percentage)}%)
+          </p>
+          <progress value={progressValue(run.percentage)} max="100">
+            {progressValue(run.percentage)}%
+          </progress>
+        </>
+      )}
+      <dl>
+        <dt>Started</dt>
+        <dd>{timestamp(run.started_at)}</dd>
+        <dt>{run.completed_at ? "Duration" : "State"}</dt>
+        <dd>{duration(run.started_at, run.completed_at)}</dd>
+      </dl>
+      {run.error && (
+        <p className="error" role="alert">
+          {run.error}
+        </p>
+      )}
+    </article>
+  );
+}
+function Operator({
+  repositories,
+  selected,
+  runs,
+  generations,
+  error,
+  select,
+  register,
+  runWorkflow,
+  startIngest,
+  navigate,
+}: {
+  repositories: Repository[];
+  selected: Repository | null;
+  runs: IngestionRun[];
+  generations: GenerationRun[];
+  error: string;
+  select: (repo: Repository) => void;
+  register: (event: FormEvent<HTMLFormElement>) => void;
+  runWorkflow: () => void;
+  startIngest: () => void;
+  navigate: (route: Route) => void;
+}) {
+  const [sourceType, setSourceType] = useState<"local" | "public_git">("local");
+  const latestIngest = runs[0] ?? null,
+    latestGeneration = generations[0] ?? null;
+  return (
+    <main className="page-shell operator">
+      <p className="eyebrow">Operator workspace</p>
+      <h1>Generate traceable documentation</h1>
+      <p className="intro">
+        The normal workflow ingests current repository content before starting
+        wiki generation.
+      </p>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <section className="operator-primary">
+        <label>
+          Repository
+          <select
+            aria-label="Repository"
+            value={selected?.id ?? ""}
+            onChange={(e) => {
+              const repo = repositories.find(
+                (item) => item.id === e.target.value,
+              );
+              if (repo) select(repo);
+            }}
+          >
+            <option value="">Choose a repository</option>
+            {repositories.map((repo) => (
+              <option key={repo.id} value={repo.id}>
+                {repo.display_name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selected && (
+          <div className="source-summary">
+            <strong>{selected.display_name}</strong>
+            <span>
+              {selected.source_type} · {selected.source_value} ·{" "}
+              {selected.selected_ref ?? "Not available"}
+            </span>
+          </div>
+        )}
+        <button
+          disabled={
+            !selected ||
+            latestIngest?.status === "running" ||
+            latestGeneration?.status === "running"
+          }
+          onClick={runWorkflow}
+        >
+          Generate wiki
+        </button>
+      </section>
+      {selected && (
+        <>
+          <section className="run-grid">
+            <RunCard label="1. Ingest" run={latestIngest} />
+            <RunCard label="2. Generate" run={latestGeneration} />
+          </section>
+          {latestGeneration?.status === "succeeded" && (
+            <button
+              className="secondary"
+              onClick={() =>
+                navigate({ name: "wiki", repositoryId: selected.id })
+              }
+            >
+              Open generated documentation
+            </button>
+          )}
+        </>
+      )}
+      <section className="registration">
+        <h2>Register repository</h2>
+        <p>
+          Add a local source or public Git repository to the documentation
+          library.
+        </p>
+        <form onSubmit={register}>
+          <label>
+            Name
+            <input name="display_name" required />
+          </label>
+          <label>
+            Source type
+            <select
+              value={sourceType}
+              onChange={(e) =>
+                setSourceType(e.target.value as "local" | "public_git")
+              }
+            >
+              <option value="local">Local</option>
+              <option value="public_git">Public Git</option>
+            </select>
+          </label>
+          {sourceType === "local" ? (
+            <label>
+              Source path
+              <input name="path" required />
+            </label>
+          ) : (
+            <>
+              <label>
+                Git URL
+                <input name="url" type="url" required />
+              </label>
+              <label>
+                Ref
+                <input name="ref" required />
+              </label>
+            </>
+          )}
+          <button>Register repository</button>
+        </form>
+      </section>
+      <details className="advanced">
+        <summary>Advanced actions</summary>
+        <button
+          disabled={!selected || latestIngest?.status === "running"}
+          onClick={startIngest}
+        >
+          Run ingest only
+        </button>
+      </details>
+    </main>
+  );
+}
 
-export function App() { const [route, setRoute] = useState(routeFromPath); const [repositories, setRepositories] = useState<Repository[]>([]); const [selected, setSelected] = useState<Repository | null>(null); const [pages, setPages] = useState<WikiPageSummary[]>([]); const [page, setPage] = useState<WikiPage | null>(null); const [source, setSource] = useState<IndexedSource | null>(null); const [runs, setRuns] = useState<IngestionRun[]>([]); const [generations, setGenerations] = useState<GenerationRun[]>([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true); const navigate = (next: Route) => { window.history.pushState({}, "", href(next)); setRoute(next); }; useEffect(() => { const listener = () => setRoute(routeFromPath()); window.addEventListener("popstate", listener); return () => window.removeEventListener("popstate", listener); }, []); async function loadRepository(repo: Repository) { setSelected(repo); setSource(null); const [nextRuns, nextGenerations, nextPages] = await Promise.all([request<IngestionRun[]>(`/api/repositories/${repo.id}/ingestion-runs`), request<GenerationRun[]>(`/api/repositories/${repo.id}/generation-runs`), request<WikiPageSummary[]>(`/api/repositories/${repo.id}/pages`)]); setRuns(nextRuns); setGenerations(nextGenerations); setPages(nextPages); const wanted = route.name === "wiki" ? nextPages[0] : undefined; setPage(wanted ? await request<WikiPage>(`/api/repositories/${repo.id}/pages/${encodeURIComponent(wanted.path)}`) : null); } async function refresh() { try { const next = await request<Repository[]>("/api/repositories"); setRepositories(next); const repo = route.name === "wiki" ? next.find((x) => x.id === route.repositoryId) : selected ?? next[0]; if (repo) await loadRepository(repo); } catch (e) { setError(e instanceof Error ? e.message : "Could not load repositories"); } finally { setLoading(false); } } useEffect(() => { void refresh(); }, [route.name, route.repositoryId]); const select = async (repo: Repository) => { setError(""); try { await loadRepository(repo); } catch (e) { setError(e instanceof Error ? e.message : "Could not load repository"); } }; const startIngest = async () => { if (!selected) return; setError(""); try { const run = await request<IngestionRun>(`/api/repositories/${selected.id}/sync`, { method: "POST" }); setRuns([run, ...runs.filter((x) => x.id !== run.id)]); } catch (e) { setError(e instanceof Error ? e.message : "Could not start ingestion"); } }; const workflow = async () => { if (!selected) return; setError(""); try { const ingestion = await request<IngestionRun>(`/api/repositories/${selected.id}/sync`, { method: "POST" }); setRuns([ingestion, ...runs.filter((x) => x.id !== ingestion.id)]); if (ingestion.status !== "succeeded") { if (ingestion.status === "failed") setError(ingestion.error ?? "Ingestion failed; generation was not started."); return; } const generation = await request<GenerationRun>(`/api/repositories/${selected.id}/pages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "overview", title: "HydraWiki Overview", source_paths: null }) }); setGenerations([generation, ...generations.filter((x) => x.id !== generation.id)]); if (generation.status === "failed") setError(generation.error ?? "Wiki generation failed."); else if (generation.status === "succeeded") { const nextPages = await request<WikiPageSummary[]>(`/api/repositories/${selected.id}/pages`); setPages(nextPages); } } catch (e) { setError(e instanceof Error ? e.message : "Workflow failed"); } }; const register = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); const sourceType = String(data.get("url") ? "public_git" : "local"); try { await request<Repository>("/api/repositories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sourceType === "local" ? { source_type: "local", path: data.get("path"), display_name: data.get("display_name") } : { source_type: "public_git", url: data.get("url"), ref: data.get("ref"), display_name: data.get("display_name") }) }); event.currentTarget.reset(); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : "Registration failed"); } }; const openPage = async (summary: WikiPageSummary) => { if (!selected) return; setPage(await request<WikiPage>(`/api/repositories/${selected.id}/pages/${encodeURIComponent(summary.path)}`)); }; const openSource = async (citation: Citation) => { if (!selected) return; setSource(await request<IndexedSource>(`/api/repositories/${selected.id}/sources/${encodeURIComponent(citation.path)}`)); }; return <><Header route={route} navigate={navigate} />{route.name === "home" ? <Home navigate={navigate} /> : route.name === "repositories" ? <Repositories repositories={repositories} loading={loading} navigate={navigate} /> : route.name === "wiki" ? <WikiViewer repository={selected} pages={pages} page={page} source={source} selectPage={openPage} openSource={openSource} navigate={navigate} /> : <Operator repositories={repositories} selected={selected} runs={runs} generations={generations} error={error} select={select} register={register} runWorkflow={workflow} startIngest={startIngest} navigate={navigate} />}</>; }
-const root = document.getElementById("root"); if (root) createRoot(root).render(<StrictMode><App /></StrictMode>);
+export function App() {
+  const [route, setRoute] = useState(routeFromPath);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [selected, setSelected] = useState<Repository | null>(null);
+  const [pages, setPages] = useState<WikiPageSummary[]>([]);
+  const [page, setPage] = useState<WikiPage | null>(null);
+  const [source, setSource] = useState<IndexedSource | null>(null);
+  const [runs, setRuns] = useState<IngestionRun[]>([]);
+  const [generations, setGenerations] = useState<GenerationRun[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const navigate = (next: Route) => {
+    window.history.pushState({}, "", href(next));
+    setRoute(next);
+  };
+  useEffect(() => {
+    const listener = () => setRoute(routeFromPath());
+    window.addEventListener("popstate", listener);
+    return () => window.removeEventListener("popstate", listener);
+  }, []);
+  async function loadRepository(repo: Repository) {
+    setSelected(repo);
+    setSource(null);
+    const [nextRuns, nextGenerations, nextPages] = await Promise.all([
+      request<IngestionRun[]>(`/api/repositories/${repo.id}/ingestion-runs`),
+      request<GenerationRun[]>(`/api/repositories/${repo.id}/generation-runs`),
+      request<WikiPageSummary[]>(`/api/repositories/${repo.id}/pages`),
+    ]);
+    setRuns(nextRuns);
+    setGenerations(nextGenerations);
+    setPages(nextPages);
+    const wanted = route.name === "wiki" ? nextPages[0] : undefined;
+    setPage(
+      wanted
+        ? await request<WikiPage>(
+            `/api/repositories/${repo.id}/pages/${encodeURIComponent(wanted.path)}`,
+          )
+        : null,
+    );
+  }
+  async function refresh() {
+    try {
+      const next = await request<Repository[]>("/api/repositories");
+      setRepositories(next);
+      const repo =
+        route.name === "wiki"
+          ? next.find((x) => x.id === route.repositoryId)
+          : (selected ?? next[0]);
+      if (repo) await loadRepository(repo);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load repositories");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    void refresh();
+  }, [route.name, route.repositoryId]);
+  const select = async (repo: Repository) => {
+    setError("");
+    try {
+      await loadRepository(repo);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load repository");
+    }
+  };
+  const startIngest = async () => {
+    if (!selected) return;
+    setError("");
+    try {
+      const run = await request<IngestionRun>(
+        `/api/repositories/${selected.id}/sync`,
+        { method: "POST" },
+      );
+      setRuns([run, ...runs.filter((x) => x.id !== run.id)]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not start ingestion");
+    }
+  };
+  const workflow = async () => {
+    if (!selected) return;
+    setError("");
+    try {
+      const ingestion = await request<IngestionRun>(
+        `/api/repositories/${selected.id}/sync`,
+        { method: "POST" },
+      );
+      setRuns([ingestion, ...runs.filter((x) => x.id !== ingestion.id)]);
+      if (ingestion.status !== "succeeded") {
+        if (ingestion.status === "failed")
+          setError(
+            ingestion.error ?? "Ingestion failed; generation was not started.",
+          );
+        return;
+      }
+      const generation = await request<GenerationRun>(
+        `/api/repositories/${selected.id}/pages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: "overview",
+            title: "HydraWiki Overview",
+            source_paths: null,
+          }),
+        },
+      );
+      setGenerations([
+        generation,
+        ...generations.filter((x) => x.id !== generation.id),
+      ]);
+      if (generation.status === "failed")
+        setError(generation.error ?? "Wiki generation failed.");
+      else if (generation.status === "succeeded") {
+        const nextPages = await request<WikiPageSummary[]>(
+          `/api/repositories/${selected.id}/pages`,
+        );
+        setPages(nextPages);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Workflow failed");
+    }
+  };
+  const register = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const sourceType = String(data.get("url") ? "public_git" : "local");
+    try {
+      await request<Repository>("/api/repositories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          sourceType === "local"
+            ? {
+                source_type: "local",
+                path: data.get("path"),
+                display_name: data.get("display_name"),
+              }
+            : {
+                source_type: "public_git",
+                url: data.get("url"),
+                ref: data.get("ref"),
+                display_name: data.get("display_name"),
+              },
+        ),
+      });
+      form.reset();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Registration failed");
+    }
+  };
+  const openPage = async (summary: WikiPageSummary) => {
+    if (!selected) return;
+    setPage(
+      await request<WikiPage>(
+        `/api/repositories/${selected.id}/pages/${encodeURIComponent(summary.path)}`,
+      ),
+    );
+  };
+  const openSource = async (citation: Citation) => {
+    if (!selected) return;
+    setSource(
+      await request<IndexedSource>(
+        `/api/repositories/${selected.id}/sources/${encodeURIComponent(citation.path)}`,
+      ),
+    );
+  };
+  return (
+    <>
+      <Header route={route} navigate={navigate} />
+      {route.name === "home" ? (
+        <Home navigate={navigate} />
+      ) : route.name === "repositories" ? (
+        <Repositories
+          repositories={repositories}
+          loading={loading}
+          navigate={navigate}
+        />
+      ) : route.name === "wiki" ? (
+        <WikiViewer
+          repository={selected}
+          pages={pages}
+          page={page}
+          source={source}
+          selectPage={openPage}
+          openSource={openSource}
+          navigate={navigate}
+        />
+      ) : (
+        <Operator
+          repositories={repositories}
+          selected={selected}
+          runs={runs}
+          generations={generations}
+          error={error}
+          select={select}
+          register={register}
+          runWorkflow={workflow}
+          startIngest={startIngest}
+          navigate={navigate}
+        />
+      )}
+    </>
+  );
+}
+const root = document.getElementById("root");
+if (root)
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
