@@ -463,6 +463,7 @@ function WikiViewer({
   pages,
   page,
   source,
+  loading,
   selectPage,
   openSource,
   navigate,
@@ -471,6 +472,7 @@ function WikiViewer({
   pages: WikiPageSummary[];
   page: WikiPage | null;
   source: IndexedSource | null;
+  loading: boolean;
   selectPage: (page: WikiPageSummary) => void;
   openSource: (citation: Citation) => void;
   navigate: (route: Route) => void;
@@ -479,7 +481,12 @@ function WikiViewer({
   const outline = page ? documentOutline(page.content) : [];
   return (
     <main className="page-shell wiki-shell">
-      {!repository ? (
+      {loading ? (
+        <section className="empty" aria-live="polite">
+          <h1>Loading documentation…</h1>
+          <p>Fetching repository identity and published pages.</p>
+        </section>
+      ) : !repository ? (
         <section className="empty">
           <h1>Repository not available</h1>
           <button onClick={() => navigate({ name: "repositories" })}>
@@ -530,6 +537,22 @@ function WikiViewer({
                       <small>{item.path}</small>
                     </button>
                   ))}
+                {expanded &&
+                  outline
+                    .filter((item) => item.level === 2)
+                    .map((item) => (
+                      <button
+                        className="nav-item section-link"
+                        key={item.id}
+                        onClick={() =>
+                          document
+                            .getElementById(item.id)
+                            ?.scrollIntoView({ behavior: "smooth" })
+                        }
+                      >
+                        {item.title}
+                      </button>
+                    ))}
               </aside>
               <article className="reader-page">
                 {page && (
@@ -1051,6 +1074,7 @@ export function App() {
           pages={pages}
           page={page}
           source={source}
+          loading={loading}
           selectPage={openPage}
           openSource={openSource}
           navigate={navigate}

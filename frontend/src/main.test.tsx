@@ -142,6 +142,14 @@ test("renders validated Mermaid SVG", () => {
   ).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
 });
 
+test("shows a loading state instead of a temporary missing repository on a direct wiki route", () => {
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+  window.history.replaceState({}, "", "/repositories/repo-1");
+  render(<App />);
+  expect(screen.getByRole("heading", { name: "Loading documentation…" })).toBeInTheDocument();
+  expect(screen.queryByText("Repository not available")).not.toBeInTheDocument();
+});
+
 test("runs ingest then generation and exposes the generated documentation link", async () => {
   const ingest = {
     id: "i1",

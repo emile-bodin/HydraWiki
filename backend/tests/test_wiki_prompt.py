@@ -16,6 +16,13 @@ def test_wiki_v2_prompt_template_loads_and_renders() -> None:
     assert "exactly: content (non-empty string) and citations" in prompt
     assert "Every claim must be supported by at least one citation" in prompt
     assert "provided paths and line ranges" in prompt
+    assert "exactly these five top-level sections" in prompt
+    for heading in ("System context", "Architecture overview", "Main components", "Key workflows", "Constraints and failure behavior"):
+        assert f"## {heading}" in prompt
+    assert "### Purpose" in prompt
+    assert "### Overview" in prompt
+    assert "### Installation" in prompt
+    assert "inline CSS" in prompt
     assert "--- src/app.py:10-14 ---" in prompt
 
 
