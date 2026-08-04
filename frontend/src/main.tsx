@@ -634,6 +634,7 @@ function Operator({
   error,
   select,
   register,
+  remove,
   runWorkflow,
   startIngest,
   navigate,
@@ -645,6 +646,7 @@ function Operator({
   error: string;
   select: (repo: Repository) => void;
   register: (event: FormEvent<HTMLFormElement>) => void;
+  remove: () => void;
   runWorkflow: () => void;
   startIngest: () => void;
   navigate: (route: Route) => void;
@@ -708,6 +710,9 @@ function Operator({
       </section>
       {selected && (
         <>
+          <button className="danger-button" onClick={remove}>
+            Delete repository
+          </button>
           <section className="run-grid">
             <RunCard label="1. Ingest" run={latestIngest} />
             <RunCard label="2. Generate" run={latestGeneration} />
@@ -791,6 +796,11 @@ export function App() {
   const [generations, setGenerations] = useState<GenerationRun[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [pendingGenerationRepositoryId, setPendingGenerationRepositoryId] =
+    useState<string | null>(null);
+  const hasActiveRun =
+    runs.some((run) => run.status === "running") ||
+    generations.some((run) => run.status === "running");
   const navigate = (next: Route) => {
     window.history.pushState({}, "", href(next));
     setRoute(next);
@@ -838,6 +848,49 @@ export function App() {
   useEffect(() => {
     void refresh();
   }, [route.name, route.repositoryId]);
+  useEffect(() => {
+    if (!selected || !hasActiveRun) return;
+    const repositoryId = selected.id;
+    const poll = async () => {
+      try {
+        const [nextRuns, nextGenerations] = await Promise.all([
+          request<IngestionRun[]>(`/api/repositories/${repositoryId}/ingestion-runs`),
+          request<GenerationRun[]>(`/api/repositories/${repositoryId}/generation-runs`),
+        ]);
+        setRuns(nextRuns);
+        setGenerations(nextGenerations);
+        const latestIngestion = nextRuns[0];
+        if (pendingGenerationRepositoryId === repositoryId && latestIngestion) {
+          if (latestIngestion.status === "succeeded") {
+            setPendingGenerationRepositoryId(null);
+            await generateWiki(repositoryId);
+          } else if (latestIngestion.status === "failed") {
+            setPendingGenerationRepositoryId(null);
+            setError(
+              latestIngestion.error ??
+                "Ingestion failed; generation was not started.",
+            );
+          }
+        }
+        if (nextGenerations.some((run) => run.status === "succeeded")) {
+          setPages(
+            await request<WikiPageSummary[]>(
+              `/api/repositories/${repositoryId}/pages`,
+            ),
+          );
+        }
+      } catch (exception) {
+        setError(
+          exception instanceof Error
+            ? exception.message
+            : "Could not refresh processing status",
+        );
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1500);
+    return () => window.clearInterval(timer);
+  }, [selected?.id, hasActiveRun, pendingGenerationRepositoryId]);
   const select = async (repo: Repository) => {
     setError("");
     try {
@@ -859,24 +912,10 @@ export function App() {
       setError(e instanceof Error ? e.message : "Could not start ingestion");
     }
   };
-  const workflow = async () => {
-    if (!selected) return;
-    setError("");
+  async function generateWiki(repositoryId: string) {
     try {
-      const ingestion = await request<IngestionRun>(
-        `/api/repositories/${selected.id}/sync`,
-        { method: "POST" },
-      );
-      setRuns([ingestion, ...runs.filter((x) => x.id !== ingestion.id)]);
-      if (ingestion.status !== "succeeded") {
-        if (ingestion.status === "failed")
-          setError(
-            ingestion.error ?? "Ingestion failed; generation was not started.",
-          );
-        return;
-      }
       const generation = await request<GenerationRun>(
-        `/api/repositories/${selected.id}/pages`,
+        `/api/repositories/${repositoryId}/pages`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -887,17 +926,42 @@ export function App() {
           }),
         },
       );
-      setGenerations([
+      setGenerations((existing) => [
         generation,
-        ...generations.filter((x) => x.id !== generation.id),
+        ...existing.filter((run) => run.id !== generation.id),
       ]);
-      if (generation.status === "failed")
+      if (generation.status === "failed") {
         setError(generation.error ?? "Wiki generation failed.");
-      else if (generation.status === "succeeded") {
-        const nextPages = await request<WikiPageSummary[]>(
-          `/api/repositories/${selected.id}/pages`,
+      } else if (generation.status === "succeeded") {
+        setPages(
+          await request<WikiPageSummary[]>(
+            `/api/repositories/${repositoryId}/pages`,
+          ),
         );
-        setPages(nextPages);
+      }
+    } catch (exception) {
+      setError(
+        exception instanceof Error ? exception.message : "Could not start generation",
+      );
+    }
+  }
+  const workflow = async () => {
+    if (!selected) return;
+    setError("");
+    try {
+      const ingestion = await request<IngestionRun>(
+        `/api/repositories/${selected.id}/sync`,
+        { method: "POST" },
+      );
+      setRuns([ingestion, ...runs.filter((x) => x.id !== ingestion.id)]);
+      if (ingestion.status === "succeeded") {
+        await generateWiki(selected.id);
+      } else if (ingestion.status === "failed") {
+        setError(
+          ingestion.error ?? "Ingestion failed; generation was not started.",
+        );
+      } else {
+        setPendingGenerationRepositoryId(selected.id);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Workflow failed");
@@ -931,6 +995,27 @@ export function App() {
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Registration failed");
+    }
+  };
+  const remove = async () => {
+    if (!selected) return;
+    setError("");
+    try {
+      await request<Repository>(`/api/repositories/${selected.id}`, {
+        method: "DELETE",
+      });
+      setSelected(null);
+      setRuns([]);
+      setGenerations([]);
+      setPages([]);
+      setPage(null);
+      setSource(null);
+      const next = await request<Repository[]>("/api/repositories");
+      setRepositories(next);
+    } catch (exception) {
+      setError(
+        exception instanceof Error ? exception.message : "Repository deletion failed",
+      );
     }
   };
   const openPage = async (summary: WikiPageSummary) => {
@@ -979,6 +1064,7 @@ export function App() {
           error={error}
           select={select}
           register={register}
+          remove={remove}
           runWorkflow={workflow}
           startIngest={startIngest}
           navigate={navigate}

@@ -320,3 +320,39 @@ test("registers a repository and resets the registration form after the API call
   expect(screen.getByLabelText("Name")).toHaveValue("");
   expect(fetchMock).toHaveBeenCalledWith("/api/repositories", expect.objectContaining({ method: "POST" }));
 });
+
+test("automatically starts generation after a polled ingestion success", async () => {
+  const running = { id: "ingest-1", status: "running", phase: "Indexing", current_count: 1, total_count: 2, percentage: 50, error: null, started_at: "2026-08-04T10:00:00Z", completed_at: null };
+  const succeeded = { ...running, status: "succeeded", phase: "Complete", current_count: 2, percentage: 100, completed_at: "2026-08-04T10:01:00Z" };
+  const generation = { id: "generation-1", repository_id: "repo-1", page_path: "overview", status: "running", configured_model: "model", provider_model: null, prompt_version: "v2", error: null, failure_stage: null, started_at: "2026-08-04T10:01:00Z", completed_at: null, diagrams: [] };
+  let ingestionRuns: object[] = [];
+  const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+    if (path === "/api/repositories") return new Response(JSON.stringify([repository]));
+    if (path === "/api/repositories/repo-1/sync" && init?.method === "POST") { ingestionRuns = [succeeded]; return new Response(JSON.stringify(running), { status: 201 }); }
+    if (path === "/api/repositories/repo-1/ingestion-runs") return new Response(JSON.stringify(ingestionRuns));
+    if (path === "/api/repositories/repo-1/pages" && init?.method === "POST") return new Response(JSON.stringify(generation), { status: 201 });
+    if (path === "/api/repositories/repo-1/generation-runs" || path === "/api/repositories/repo-1/pages") return empty();
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  window.history.replaceState({}, "", "/operator");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Generate wiki" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1/pages", expect.objectContaining({ method: "POST" })));
+});
+
+test("deletes the selected repository through the existing endpoint", async () => {
+  let repositories: object[] = [repository];
+  const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+    if (path === "/api/repositories" && init?.method === "DELETE") return new Response(JSON.stringify(repository));
+    if (path === "/api/repositories") return new Response(JSON.stringify(repositories));
+    if (path === "/api/repositories/repo-1" && init?.method === "DELETE") { repositories = []; return new Response(JSON.stringify(repository)); }
+    return empty();
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  window.history.replaceState({}, "", "/operator");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete repository" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1", { method: "DELETE" }));
+  expect(await screen.findByText("Choose a repository")).toBeInTheDocument();
+});
