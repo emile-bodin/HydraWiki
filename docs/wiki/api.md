@@ -107,8 +107,6 @@ Body (`WikiGenerationRequest`):
 
 ```json
 {
-  "path": "overview",
-  "title": "Overview",
   "source_paths": null
 }
 ```
@@ -118,9 +116,10 @@ Returns `GenerationRunResponse`:
 | Field | Notes |
 |-------|--------|
 | `id` | Generation run id |
-| `page_path` | Requested path |
+| `page_path` | `wiki` for a repository-wide generation run |
 | `status` | `running` \| `succeeded` \| `failed` |
 | `source_selection` | Compact chunk selection JSON |
+| `wiki_structure` | Five fixed groups with zero or more derived page descriptors |
 | `configured_model` / `provider_model` | Requested vs provider-reported |
 | `prompt_version` | e.g. `wiki-v2` |
 | `error` / `failure_stage` | Present on failure |
@@ -135,7 +134,7 @@ Returns `GenerationRunResponse`:
 
 ### `GET /api/repositories/{repository_id}/pages`
 
-List of `WikiPageSummaryResponse`: `path`, `title`, `lifecycle_status` (`published`), `generation_run_id`.
+List of `WikiPageSummaryResponse`: `path`, `title`, `lifecycle_status` (`published`), `generation_run_id`. Paths are source-derived and begin with one of the five reader groups.
 
 ### `GET /api/repositories/{repository_id}/pages/{page_path}`
 

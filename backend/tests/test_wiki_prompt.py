@@ -1,6 +1,8 @@
+import json
+
 import pytest
 
-from hydrawiki.wiki import WikiGenerationError, _load_prompt_template, _prompt
+from hydrawiki.wiki import WIKI_GROUPS, WikiGenerationError, _load_prompt_template, _parse_generated_wiki, _prompt
 
 
 def test_wiki_v2_prompt_template_loads_and_renders() -> None:
@@ -52,3 +54,19 @@ def test_wiki_prompt_fails_clearly_when_template_cannot_be_loaded(monkeypatch: p
 
     with pytest.raises(WikiGenerationError, match="wiki-v2 prompt template could not be loaded"):
         _prompt("Application overview", [])
+
+
+def test_generated_wiki_structure_is_source_derived_and_keeps_empty_groups() -> None:
+    payload = {
+        "structure": [
+            {"key": key, "title": label, "pages": ([{"path": "concepts/service", "title": "Service"}] if key == "concepts" else [])}
+            for key, label in WIKI_GROUPS
+        ],
+        "pages": [{"group": "concepts", "path": "concepts/service", "title": "Service", "content": "# Service", "citations": [{"path": "app.py", "line_start": 1, "line_end": 2}]}],
+    }
+
+    wiki = _parse_generated_wiki(json.dumps(payload), "ignored", "ignored")
+
+    assert [group.key for group in wiki.structure] == [key for key, _label in WIKI_GROUPS]
+    assert [group.pages for group in wiki.structure if group.key != "concepts"] == [[], [], [], []]
+    assert [page.path for page in wiki.pages] == ["concepts/service"]

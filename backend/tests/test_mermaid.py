@@ -56,6 +56,10 @@ def test_standard_labeled_subgraph_diagram_is_supported():
     validate_mermaid_source("flowchart LR\nA[Repository] -->|indexes| B[Wiki]\nsubgraph Documentation\nB --> C[Reader]\nend")
 
 
+def test_source_derived_labels_keep_paths_and_punctuation_out_of_node_ids():
+    validate_mermaid_source('flowchart LR\nHostRepos["/repositories (read-only)"] --> Api["API service :8000"]')
+
+
 def test_standard_mermaid_root_style_is_an_inert_safe_subset():
     svg = '<svg xmlns="http://www.w3.org/2000/svg" style="max-width: 86.6562px; background-color: white;"><text x="1" y="2">safe</text></svg>'
     assert 'style="max-width: 86.6562px; background-color: white;"' in sanitize_svg(svg, 1000)

@@ -58,8 +58,10 @@ class ManifestRunResponse(BaseModel):
 
 
 class WikiGenerationRequest(BaseModel):
-    path: str = Field(min_length=1, max_length=500)
-    title: str = Field(min_length=1, max_length=200)
+    # Kept optional for clients that used the pre-HYDWIK-25 endpoint. The
+    # operator action now derives paths and titles from indexed sources.
+    path: str | None = Field(default=None, min_length=1, max_length=500)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
     source_paths: list[str] | None = None
 
 
@@ -101,6 +103,7 @@ class GenerationRunResponse(BaseModel):
     page_path: str
     status: Literal["running", "succeeded", "failed"]
     source_selection: list[dict]
+    wiki_structure: list[dict] = Field(default_factory=list)
     configured_model: str | None
     provider_model: str | None
     prompt_version: str
@@ -231,7 +234,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if RepositoryStore(database).get(repository_id) is None:
             raise HTTPException(status_code=404, detail="repository not found")
         try:
-            result = generate_wiki_page(database, current, repository_id, request.path, request.title, request.source_paths)
+            result = generate_wiki_page(
+                database,
+                current,
+                repository_id,
+                request.path or "get-started/overview",
+                request.title or "Get started",
+                request.source_paths,
+            )
         except GenerationBusyError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         row = WikiStore(database).get_run(result.run_id)

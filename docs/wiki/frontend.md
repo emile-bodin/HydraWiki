@@ -27,7 +27,8 @@ Features:
 - Repository selector
 - Status line (lifecycle, last successful processing time)
 - Empty states for no repo / no published pages, with links to the operator dashboard
-- Left nav of published pages (`path` + `title`)
+- Responsive, collapsible left nav with fixed groups: Get started, Concepts, Guides, Reference, and Workflows
+- Variable source-derived pages inside each group; empty groups remain visible as “No published pages”
 - Article body via `renderDocument`
 - Optional “On this page” outline from `##` / `###` headings
 - Citations footer: buttons labeled with path and line range
@@ -43,7 +44,7 @@ Features:
 - List cards with source, status, last success, current error
 - Delete repository
 - Start ingestion (disabled while a run is already running / starting)
-- Generate wiki page form (path + title) once ingestion success is evident
+- One `Generate wiki` action once ingestion success is evident; page path, title, group, and section are derived by the backend
 - Ingestion run cards: phase, counts, percentage `<progress>`, errors, link to manifest entries
 - Generation run cards: models, prompt version, failure stage, errors, diagrams
 - Optional raw page preview and source panel

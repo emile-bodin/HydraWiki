@@ -75,6 +75,18 @@ def test_successful_generation_persists_page_artifacts_and_citations(monkeypatch
     assert run["failure_stage"] is None
 
 
+def test_source_derived_generation_publishes_variable_pages_and_empty_groups(monkeypatch):
+    database, repository, settings = setup_indexed_repository(monkeypatch)
+    FakeGenerator.response = '{"structure":[{"key":"get-started","title":"Get started","pages":[]},{"key":"concepts","title":"Concepts","pages":[{"path":"concepts/service","title":"Service"}]},{"key":"guides","title":"Guides","pages":[]},{"key":"reference","title":"Reference","pages":[]},{"key":"workflows","title":"Workflows","pages":[]}],"pages":[{"group":"concepts","path":"concepts/service","title":"Service","content":"# Service","citations":[{"path":"app.py","line_start":1,"line_end":3}]}]}'
+
+    result = generate_wiki_page(database, settings, repository["id"], "ignored", "Ignored")
+
+    assert result.status == "succeeded"
+    assert [page["path"] for page in WikiStore(database).list_pages(repository["id"])] == ["concepts/service"]
+    run = WikiStore(database).get_run(result.run_id)
+    assert [group["key"] for group in run["wiki_structure"]] == ["get-started", "concepts", "guides", "reference", "workflows"]
+
+
 def test_duplicate_citations_are_deduplicated_before_publication(monkeypatch):
     database, repository, settings = setup_indexed_repository(monkeypatch)
     FakeGenerator.response = '{"content":"# Overview","citations":[{"path":"app.py","line_start":1,"line_end":3},{"path":"app.py","line_start":1,"line_end":3}]}'
@@ -246,7 +258,7 @@ def test_persistence_failure_preserves_existing_published_page(monkeypatch):
 
 def test_mermaid_failure_is_durable_and_preserves_prior_publication(monkeypatch):
     database, repository, settings = setup_indexed_repository(monkeypatch)
-    FakeGenerator.response = '{"content":"# Overview\\n```mermaid\\nflowchart TD\\nA-->B\\n```","citations":[{"path":"app.py","line_start":1,"line_end":3}]}'
+    FakeGenerator.response = '{"content":"# Overview\\n```mermaid\\nflowchart LR\\nHostRepos[\\"/repositories (read-only)\\"] --> Api[\\"API service :8000\\"]\\n```","citations":[{"path":"app.py","line_start":1,"line_end":3}]}'
 
     class SafeRenderer:
         def __init__(self, *_args): pass
@@ -266,4 +278,5 @@ def test_mermaid_failure_is_durable_and_preserves_prior_publication(monkeypatch)
     assert failed.status == "failed"
     assert WikiStore(database).get_page(repository["id"], "overview")["generation_run_id"] == first.run_id
     run = WikiStore(database).get_run(failed.run_id)
-    assert run["diagrams"] == [{"ordinal": 0, "source": "flowchart TD\nA-->B", "status": "failed", "svg": None, "error": "Mermaid source failed server-side validation"}]
+    assert run["failure_stage"] == "mermaid_validation"
+    assert run["diagrams"] == [{"ordinal": 0, "source": 'flowchart LR\nHostRepos["/repositories (read-only)"] --> Api["API service :8000"]', "status": "failed", "svg": None, "error": "Mermaid source failed server-side validation"}]

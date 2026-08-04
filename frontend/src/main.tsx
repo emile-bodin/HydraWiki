@@ -66,6 +66,31 @@ type Route = {
   repositoryId?: string;
 };
 
+export const WIKI_GROUPS = [
+  { key: "get-started", label: "Get started" },
+  { key: "concepts", label: "Concepts" },
+  { key: "guides", label: "Guides" },
+  { key: "reference", label: "Reference" },
+  { key: "workflows", label: "Workflows" },
+] as const;
+type WikiGroupKey = (typeof WIKI_GROUPS)[number]["key"];
+
+export function pageGroup(path: string): WikiGroupKey | null {
+  const [group, slug] = path.split("/", 2);
+  return slug && WIKI_GROUPS.some((item) => item.key === group)
+    ? (group as WikiGroupKey)
+    : null;
+}
+
+export function groupedPages(pages: WikiPageSummary[]) {
+  return Object.fromEntries(
+    WIKI_GROUPS.map((group) => [
+      group.key,
+      pages.filter((page) => pageGroup(page.path) === group.key),
+    ]),
+  ) as Record<WikiGroupKey, WikiPageSummary[]>;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API}${path}`, init);
   if (response.ok) return response.json() as Promise<T>;
@@ -458,6 +483,63 @@ function Repositories({
   );
 }
 
+function WikiNavigation({
+  pages,
+  activePath,
+  selectPage,
+}: {
+  pages: WikiPageSummary[];
+  activePath?: string;
+  selectPage: (page: WikiPageSummary) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<WikiGroupKey>>(new Set());
+  const grouped = groupedPages(pages);
+  return (
+    <aside className="wiki-nav" aria-label="Wiki sections">
+      {WIKI_GROUPS.map((group) => {
+        const groupPages = grouped[group.key];
+        const isCollapsed = collapsed.has(group.key);
+        return (
+          <section className="wiki-group" key={group.key}>
+            <button
+              className="nav-group"
+              aria-expanded={!isCollapsed}
+              onClick={() =>
+                setCollapsed((current) => {
+                  const next = new Set(current);
+                  if (next.has(group.key)) next.delete(group.key);
+                  else next.add(group.key);
+                  return next;
+                })
+              }
+            >
+              <span>{group.label}</span>
+              <small>{groupPages.length} pages</small>
+            </button>
+            {!isCollapsed &&
+              (groupPages.length === 0 ? (
+                <p className="empty-group">No published pages</p>
+              ) : (
+                groupPages.map((item) => (
+                  <button
+                    className={
+                      activePath === item.path ? "nav-item active" : "nav-item"
+                    }
+                    key={item.path}
+                    onClick={() => selectPage(item)}
+                  >
+                    <strong>{item.title}</strong>
+                    <small>{item.path}</small>
+                  </button>
+                ))
+              ))}
+          </section>
+        );
+      })}
+    </aside>
+  );
+}
+
 function WikiViewer({
   repository,
   pages,
@@ -477,7 +559,6 @@ function WikiViewer({
   openSource: (citation: Citation) => void;
   navigate: (route: Route) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
   const outline = page ? documentOutline(page.content) : [];
   return (
     <main className="page-shell wiki-shell">
@@ -504,56 +585,8 @@ function WikiViewer({
               <NotAvailable>{repository.selected_ref}</NotAvailable>
             </p>
           </div>
-          {pages.length === 0 ? (
-            <section className="empty">
-              <h2>No published pages</h2>
-              <p>Generate documentation from the operator workspace.</p>
-              <button onClick={() => navigate({ name: "operator" })}>
-                Open operator
-              </button>
-            </section>
-          ) : (
-            <div className="wiki-layout">
-              <aside className="wiki-nav">
-                <button
-                  className="nav-group"
-                  aria-expanded={expanded}
-                  onClick={() => setExpanded(!expanded)}
-                >
-                  Published pages <span>{expanded ? "−" : "+"}</span>
-                </button>
-                {expanded &&
-                  pages.map((item) => (
-                    <button
-                      className={
-                        page?.path === item.path
-                          ? "nav-item active"
-                          : "nav-item"
-                      }
-                      key={item.path}
-                      onClick={() => selectPage(item)}
-                    >
-                      <strong>{item.title}</strong>
-                      <small>{item.path}</small>
-                    </button>
-                  ))}
-                {expanded &&
-                  outline
-                    .filter((item) => item.level === 2)
-                    .map((item) => (
-                      <button
-                        className="nav-item section-link"
-                        key={item.id}
-                        onClick={() =>
-                          document
-                            .getElementById(item.id)
-                            ?.scrollIntoView({ behavior: "smooth" })
-                        }
-                      >
-                        {item.title}
-                      </button>
-                    ))}
-              </aside>
+          <div className="wiki-layout">
+              <WikiNavigation pages={pages} activePath={page?.path} selectPage={selectPage} />
               <article className="reader-page">
                 {page && (
                   <>
@@ -579,6 +612,15 @@ function WikiViewer({
                     )}
                   </>
                 )}
+                {!page && pages.length === 0 && (
+                  <section className="empty">
+                    <h2>No published pages</h2>
+                    <p>Generate documentation from the operator workspace.</p>
+                    <button onClick={() => navigate({ name: "operator" })}>
+                      Open operator
+                    </button>
+                  </section>
+                )}
               </article>
               <aside className="outline" aria-label="On this page">
                 {outline.map((item) => (
@@ -595,8 +637,7 @@ function WikiViewer({
                   </button>
                 ))}
               </aside>
-            </div>
-          )}
+          </div>
         </>
       )}
     </main>
