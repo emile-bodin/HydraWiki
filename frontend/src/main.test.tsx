@@ -30,6 +30,8 @@ test("renders the compact landing page and navigates through direct routes", asy
   expect(window.location.pathname).toBe("/repositories");
   fireEvent.click(screen.getByRole("link", { name: "Operator" }));
   expect(await screen.findByRole("heading", { name: /generate traceable/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Register repository" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Register repository" })).toBeVisible();
   expect(window.location.pathname).toBe("/operator");
 });
 
