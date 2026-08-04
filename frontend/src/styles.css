@@ -75,6 +75,8 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f0f4f5; paddi
 .source-drawer pre { margin: 0; max-height: 22rem; overflow: auto; }
 .dashboard-section { margin: 2rem 0; }
 .operator-shell form, .operator-shell .repository-card, .operator-shell .run, .operator-shell .page-preview, .operator-shell .source { display: grid; gap: 1rem; padding: 1.25rem; background: #fff; color: #17202a; border: 1px solid #d9e2e7; border-radius: .75rem; margin: 1rem 0; }
+.generation-action { display: grid; gap: .75rem; margin: 1rem 0; padding: 1.25rem; color: #17202a; background: #dff0f3; border: 1px solid #9bc4ce; border-radius: .75rem; }
+.generation-action h3, .generation-action p { margin-bottom: 0; }
 .repository-card { grid-template-columns: 1fr auto; align-items: center; }
 .repository-card p, .run p, .source p, .page-preview p { color: #52616b; margin-bottom: 0; }
 .repository-name { color: #147d92; background: transparent; padding: 0; font-size: 1.15rem; font-weight: 700; }
