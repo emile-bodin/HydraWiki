@@ -52,6 +52,10 @@ def test_title_only_frontmatter_remains_supported():
     validate_mermaid_source("---\ntitle: Architecture\n---\nflowchart TD\nA-->B")
 
 
+def test_standard_labeled_subgraph_diagram_is_supported():
+    validate_mermaid_source("flowchart LR\nA[Repository] -->|indexes| B[Wiki]\nsubgraph Documentation\nB --> C[Reader]\nend")
+
+
 def test_standard_mermaid_root_style_is_an_inert_safe_subset():
     svg = '<svg xmlns="http://www.w3.org/2000/svg" style="max-width: 86.6562px; background-color: white;"><text x="1" y="2">safe</text></svg>'
     assert 'style="max-width: 86.6562px; background-color: white;"' in sanitize_svg(svg, 1000)
@@ -68,6 +72,13 @@ def test_renderer_style_removal_keeps_nodes_visible_with_safe_defaults():
     assert "<style" not in sanitized
     assert 'class=' not in sanitized
     assert '<rect width="100" height="40" fill="white" stroke="#333" stroke-width="1"' in sanitized
+
+
+def test_renderer_normalizes_edge_strokes_for_the_reader():
+    svg = '<svg><path d="M 0 0" stroke="#000" stroke-width="4" /><line x1="0" y1="0" x2="4" y2="4" stroke-width="3" /></svg>'
+    sanitized = sanitize_svg(svg, 1000, strip_renderer_presentation=True)
+    assert sanitized.count('stroke-width="1"') == 2
+    assert sanitized.count('stroke="#475569"') == 2
 
 
 @pytest.mark.skipif(shutil.which("mmdc") is None, reason="real Mermaid CLI unavailable; run the container validation command documented in the PR")
