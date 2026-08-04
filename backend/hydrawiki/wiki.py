@@ -315,7 +315,7 @@ def _validate_structure(wiki: GeneratedWiki) -> None:
             if page.path in planned or not page.path.startswith(f"{group.key}/"):
                 raise WikiGenerationError("generation response contained an invalid or duplicate planned page")
             planned[page.path] = (group.key, page.title)
-    if {page.path for page in wiki.pages} != set(planned):
+    if len({page.path for page in wiki.pages}) != len(wiki.pages) or {page.path for page in wiki.pages} != set(planned):
         raise WikiGenerationError("generation response pages did not match the derived wiki structure")
     if any(page.group not in WIKI_GROUP_KEYS or planned[page.path] != (page.group, page.title) for page in wiki.pages):
         raise WikiGenerationError("generation response page metadata did not match the derived wiki structure")
