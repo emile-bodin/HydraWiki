@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { App, citationLabel, documentOutline, progressValue, renderDocument, runState } from "./main";
+import { App, FULL_WIKI_PAGES, citationLabel, documentOutline, progressValue, renderDocument, runState } from "./main";
 
 const repository = {
   id: "repo-1", source_type: "public_git", source_value: "https://github.com/example/repo.git",
@@ -23,13 +23,13 @@ test("shows durable progress, keeps failed generation separate from published pa
     }]), { status: 200 });
     if (input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify([
       { id: "generation-failed", page_path: "failed", status: "failed", error: "provider unavailable", started_at: "2026-08-01T10:00:00Z", completed_at: "2026-08-01T10:01:00Z", diagrams: [{ ordinal: 0, source: "flowchart TD\nA-->B", status: "failed", svg: null, error: "invalid syntax" }] },
-      { id: "generation-published", page_path: "overview", status: "succeeded", error: null, started_at: "2026-08-01T10:00:00Z", completed_at: "2026-08-01T10:01:00Z", diagrams: [] },
+      { id: "generation-published", page_path: "get-started/overview", status: "succeeded", error: null, started_at: "2026-08-01T10:00:00Z", completed_at: "2026-08-01T10:01:00Z", diagrams: [] },
     ]), { status: 200 });
     if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([
-      { path: "overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published" },
+      { path: "get-started/overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published" },
     ]), { status: 200 });
-    if (input === "/api/repositories/repo-1/pages/overview") return new Response(JSON.stringify({
-      id: "page-1", path: "overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published", content: "# Overview\n\n```mermaid\nflowchart TD\nA-->B\n```",
+    if (input === "/api/repositories/repo-1/pages/get-started%2Foverview") return new Response(JSON.stringify({
+      id: "page-1", path: "get-started/overview", title: "Overview", lifecycle_status: "published", generation_run_id: "generation-published", content: "# Overview\n\n```mermaid\nflowchart TD\nA-->B\n```",
       citations: [{ path: "src/app.py", line_start: 4, line_end: 8 }], diagrams: [{ ordinal: 0, source: "flowchart TD\nA-->B", status: "safe", svg: "<svg><text>safe</text></svg>", error: null }],
     }), { status: 200 });
     if (input === "/api/repositories/repo-1/sources/src%2Fapp.py") return new Response(JSON.stringify({ path: "src/app.py", line_count: 8, content: "print('indexed')" }), { status: 200 });
@@ -68,6 +68,43 @@ test("formats citations and run states without inventing success", () => {
   expect(runState("succeeded")).toBe("available");
   expect(progressValue(125)).toBe(100);
   expect(progressValue(-1)).toBe(0);
+});
+
+test("groups published pages into the five fixed collapsible reader sections and exposes unassigned pages only to operators", async () => {
+  const pages = [
+    { path: "guides/configuration", title: "Configuration", lifecycle_status: "published", generation_run_id: "guide" },
+    { path: "concepts/architecture", title: "Architecture", lifecycle_status: "published", generation_run_id: "concept" },
+    { path: "legacy-page", title: "Legacy page", lifecycle_status: "published", generation_run_id: "legacy" },
+  ];
+  const fetchMock = vi.fn(async (input: string) => {
+    if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
+    if (input === "/api/repositories/repo-1/ingestion-runs" || input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify([]), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify(pages), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages/guides%2Fconfiguration") return new Response(JSON.stringify({ id: "page", ...pages[0], content: "# Configuration", citations: [], diagrams: [] }), { status: 200 });
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  await screen.findByRole("button", { name: /Configuration/ });
+  const sectionLabels = Array.from(screen.getByRole("navigation", { name: "Wiki sections" }).querySelectorAll(".section-toggle"), (element) => element.textContent?.replace(/\d+ pages?/, "").trim());
+  expect(sectionLabels).toEqual(["Get started", "Concepts", "Guides", "Reference", "Workflows"]);
+  expect(screen.getAllByRole("button", { name: /Get started/ })).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /Concepts/ })).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /Guides/ })).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /Reference/ })).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /Workflows/ })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: /Configuration/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Configuration/ })).toHaveClass("active");
+  expect(screen.queryByRole("button", { name: /Legacy page/ })).not.toBeInTheDocument();
+  const guides = screen.getByRole("button", { name: /Guides/ });
+  fireEvent.click(guides);
+  expect(guides).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("button", { name: /Configuration/ })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Operator dashboard" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Unassigned published pages");
+  expect(screen.getByText("legacy-page")).toBeInTheDocument();
 });
 
 test("renders common Markdown blocks and inline formatting as semantic HTML", () => {
@@ -133,18 +170,20 @@ test("starts ingestion and shows the returned running progress", async () => {
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1/sync", { method: "POST" }));
 });
 
-test("starts generation and refreshes published pages after success", async () => {
-  const runningGeneration = { id: "generation-1", repository_id: "repo-1", page_path: "overview", status: "running", source_selection: null, configured_model: "wiki-model", provider_model: null, prompt_version: "v1", error: null, started_at: "2026-08-02T10:00:00Z", completed_at: null, diagrams: [] };
-  const succeededGeneration = { ...runningGeneration, status: "succeeded", provider_model: "provider-wiki-model", completed_at: "2026-08-02T10:01:00Z" };
+test("generates the fixed wiki structure and refreshes published pages without manual section controls", async () => {
   let generationRuns: object[] = [];
   let pages: object[] = [];
+  const requests: unknown[] = [];
   const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
     if (input === "/api/repositories") return new Response(JSON.stringify([repository]), { status: 200 });
     if (input === "/api/repositories/repo-1/ingestion-runs") return new Response(JSON.stringify([]), { status: 200 });
     if (input === "/api/repositories/repo-1/pages" && init?.method === "POST") {
-      generationRuns = [succeededGeneration];
-      pages = [{ path: "overview", title: "HydraWiki Overview", lifecycle_status: "published", generation_run_id: "generation-1" }];
-      return new Response(JSON.stringify(succeededGeneration), { status: 201 });
+      const payload = JSON.parse(String(init.body));
+      requests.push(payload);
+      const run = { id: `generation-${requests.length}`, repository_id: "repo-1", page_path: payload.path, status: "succeeded", source_selection: null, configured_model: "wiki-model", provider_model: "provider-wiki-model", prompt_version: "v2", error: null, started_at: "2026-08-02T10:00:00Z", completed_at: "2026-08-02T10:01:00Z", diagrams: [] };
+      generationRuns = [run, ...generationRuns];
+      pages = FULL_WIKI_PAGES.map((page, index) => ({ path: page.path, title: page.title, lifecycle_status: "published", generation_run_id: `generation-${index + 1}` }));
+      return new Response(JSON.stringify(run), { status: 201 });
     }
     if (input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify(generationRuns), { status: 200 });
     if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify(pages), { status: 200 });
@@ -154,15 +193,17 @@ test("starts generation and refreshes published pages after success", async () =
   render(<App />);
 
   fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate wiki page" }));
+  expect(screen.getByRole("button", { name: "Generate wiki" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Section")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Page slug")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Page title")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Generate wiki page" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Generate wiki" }));
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1/pages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: "overview", title: "HydraWiki Overview", source_paths: null }),
-  }));
-  await screen.findByText("Provider model: provider-wiki-model");
+  await waitFor(() => expect(requests).toEqual(FULL_WIKI_PAGES));
+  expect((await screen.findAllByText("Provider model: provider-wiki-model")).length).toBe(FULL_WIKI_PAGES.length);
   expect(fetchMock.mock.calls.filter(([path]) => path === "/api/repositories/repo-1/pages").length).toBeGreaterThan(1);
+  expect(fetchMock).toHaveBeenCalledWith("/api/repositories/repo-1/pages", expect.objectContaining({ method: "POST", headers: { "Content-Type": "application/json" } }));
 });
 
 test("shows running, succeeded, and failed generation details without numeric generation progress", async () => {
@@ -187,6 +228,7 @@ test("shows running, succeeded, and failed generation details without numeric ge
   expect(screen.getAllByText("Configured model: wiki-model")).toHaveLength(3);
   expect(screen.getByText("Prompt version: v2")).toBeInTheDocument();
   expect(screen.getByText("provider unavailable")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Wiki generation running" })).toBeDisabled();
 });
 
 test("shows a visible generation API error", async () => {
@@ -200,7 +242,7 @@ test("shows a visible generation API error", async () => {
   render(<App />);
 
   fireEvent.click(await screen.findByRole("button", { name: "Operator dashboard" }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate wiki page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate wiki" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("A generation run is already running");
 });
 
@@ -288,9 +330,9 @@ test("renders generated Markdown as readable reader content and keeps sources in
   const fetchMock = vi.fn(async (input: string) => {
     if (input === "/api/repositories") return new Response(JSON.stringify([readableRepository]), { status: 200 });
     if (input === "/api/repositories/repo-1/ingestion-runs" || input === "/api/repositories/repo-1/generation-runs") return new Response(JSON.stringify([]), { status: 200 });
-    if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([{ path: "guide", title: "Getting started", lifecycle_status: "published", generation_run_id: "generation-1" }]), { status: 200 });
-    if (input === "/api/repositories/repo-1/pages/guide") return new Response(JSON.stringify({
-      id: "page-1", path: "guide", title: "Getting started", lifecycle_status: "published", generation_run_id: "generation-1",
+    if (input === "/api/repositories/repo-1/pages") return new Response(JSON.stringify([{ path: "get-started/guide", title: "Getting started", lifecycle_status: "published", generation_run_id: "generation-1" }]), { status: 200 });
+    if (input === "/api/repositories/repo-1/pages/get-started%2Fguide") return new Response(JSON.stringify({
+      id: "page-1", path: "get-started/guide", title: "Getting started", lifecycle_status: "published", generation_run_id: "generation-1",
       content: "# Getting started\n\nUse HydraWiki to document your repository.\n\n- Register a repository\n- Generate a page",
       citations: [{ path: "README.md", line_start: 1, line_end: 6 }], diagrams: [],
     }), { status: 200 });

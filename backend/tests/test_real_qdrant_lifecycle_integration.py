@@ -67,10 +67,10 @@ def test_add_progress_cited_page_delete_removes_real_vectors_and_metadata(tmp_pa
         assert synced.json()["status"] == "succeeded"
         assert synced.json()["phase"] == "Indexed"
         assert synced.json()["percentage"] == 100
-        page = client.post(f"/api/repositories/{repository_id}/pages", json={"path": "overview", "title": "Overview"})
+        page = client.post(f"/api/repositories/{repository_id}/pages", json={"path": "get-started/overview", "title": "Overview"})
         assert page.status_code == 201
         assert page.json()["status"] == "succeeded"
-        published = client.get(f"/api/repositories/{repository_id}/pages/overview")
+        published = client.get(f"/api/repositories/{repository_id}/pages/get-started/overview")
         assert published.status_code == 200
         assert published.json()["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 2}]
 

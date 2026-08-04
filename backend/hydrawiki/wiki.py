@@ -25,7 +25,15 @@ class WikiGenerationError(RuntimeError):
     pass
 
 
-_PROMPT_PLACEHOLDERS = ("__TITLE__", "__SOURCE_EXCERPTS__")
+_PROMPT_PLACEHOLDERS = ("__TITLE__", "__SECTION_KEY__", "__SECTION_LABEL__", "__SECTION_PURPOSE__", "__SOURCE_EXCERPTS__")
+
+_WIKI_SECTIONS = {
+    "get-started": ("Get started", "Goal, first orientation, requirements, installation, and first useful steps where supported by evidence."),
+    "concepts": ("Concepts", "Architecture, core concepts, component relationships, and design principles where supported by evidence."),
+    "guides": ("Guides", "Task-oriented instructions for concrete development or operational tasks where supported by evidence."),
+    "reference": ("Reference", "Precise technical facts such as configuration, APIs, commands, options, and data structures where supported by evidence."),
+    "workflows": ("Workflows", "End-to-end processes, sequence, states, decision points, and error handling where supported by evidence."),
+}
 
 
 class GenerationBusyError(WikiGenerationError):
@@ -241,13 +249,24 @@ def _load_prompt_template() -> str:
         raise WikiGenerationError("wiki-v2 prompt template could not be loaded") from exc
 
 
-def _prompt(title: str, sources: list[dict]) -> str:
+def _section_context(page_path: str) -> tuple[str, str, str]:
+    section_key, separator, remainder = page_path.partition("/")
+    if not separator or not remainder:
+        raise WikiGenerationError("page path must begin with a supported wiki section followed by a page slug")
+    section = _WIKI_SECTIONS.get(section_key)
+    if section is None:
+        raise WikiGenerationError(f"unsupported wiki section prefix: {section_key}")
+    return section_key, *section
+
+
+def _prompt(title: str, sources: list[dict], page_path: str) -> str:
     excerpts = "\n\n".join(f"--- {row['path']}:{row['line_start']}-{row['line_end']} ---\n{row['chunk_text']}" for row in sources)
+    section_key, section_label, section_purpose = _section_context(page_path)
     template = _load_prompt_template()
     missing = [placeholder for placeholder in _PROMPT_PLACEHOLDERS if placeholder not in template]
     if missing:
         raise WikiGenerationError(f"wiki-v2 prompt template is missing required placeholder(s): {', '.join(missing)}")
-    return template.replace("__TITLE__", title).replace("__SOURCE_EXCERPTS__", excerpts)
+    return template.replace("__TITLE__", title).replace("__SECTION_KEY__", section_key).replace("__SECTION_LABEL__", section_label).replace("__SECTION_PURPOSE__", section_purpose).replace("__SOURCE_EXCERPTS__", excerpts)
 
 
 def _deduplicate_citations(citations: list[Citation]) -> list[Citation]:
@@ -276,7 +295,7 @@ def _generate_wiki_page(database: Database, settings: Settings, repository_id: U
         sources = store.select_sources(repository_id, source_paths, settings.generation_max_source_characters)
         store.set_source_selection(run_id, sources)
         failure_stage = "prompt"
-        prompt = _prompt(title, sources)
+        prompt = _prompt(title, sources, page_path)
         store.add_artifact(run_id, "prompt", prompt)
         if not settings.generation_url or not settings.generation_model:
             raise WikiGenerationError("generation adapter is not configured")

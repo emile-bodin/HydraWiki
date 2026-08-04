@@ -59,9 +59,9 @@ def setup_indexed_repository(monkeypatch):
 
 def test_successful_generation_persists_page_artifacts_and_citations(monkeypatch):
     database, repository, settings = setup_indexed_repository(monkeypatch)
-    result = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    result = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert result.status == "succeeded"
-    page = WikiStore(database).get_page(repository["id"], "overview")
+    page = WikiStore(database).get_page(repository["id"], "get-started/overview")
     assert page["content"].startswith("# Overview")
     assert page["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
     with database.connection() as connection:
@@ -79,10 +79,10 @@ def test_duplicate_citations_are_deduplicated_before_publication(monkeypatch):
     database, repository, settings = setup_indexed_repository(monkeypatch)
     FakeGenerator.response = '{"content":"# Overview","citations":[{"path":"app.py","line_start":1,"line_end":3},{"path":"app.py","line_start":1,"line_end":3}]}'
 
-    result = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    result = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
 
     assert result.status == "succeeded"
-    assert WikiStore(database).get_page(repository["id"], "overview")["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
+    assert WikiStore(database).get_page(repository["id"], "get-started/overview")["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
 
 
 def test_generation_uses_responses_endpoint_without_bypassing_citation_validation(monkeypatch):
@@ -95,21 +95,21 @@ def test_generation_uses_responses_endpoint_without_bypassing_citation_validatio
             captured["endpoint_url"] = endpoint_url
 
     monkeypatch.setattr("hydrawiki.wiki.OpenAICompatibleGenerationAdapter", ResponsesGenerator)
-    result = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    result = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert result.status == "succeeded"
     assert captured["endpoint_url"] == "http://fake-litellm:4000/v1/responses"
-    assert WikiStore(database).get_page(repository["id"], "overview")["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
+    assert WikiStore(database).get_page(repository["id"], "get-started/overview")["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
 
 
 def test_generation_api_exposes_only_published_cited_pages(monkeypatch):
     database, repository, settings = setup_indexed_repository(monkeypatch)
     with TestClient(create_app(settings)) as client:
-        generated = client.post(f"/api/repositories/{repository['id']}/pages", json={"path": "overview", "title": "Overview"})
+        generated = client.post(f"/api/repositories/{repository['id']}/pages", json={"path": "get-started/overview", "title": "Overview"})
         assert generated.status_code == 201
         assert generated.json()["status"] == "succeeded"
         pages = client.get(f"/api/repositories/{repository['id']}/pages")
-        assert pages.json() == [{"path": "overview", "title": "Overview", "lifecycle_status": "published", "generation_run_id": generated.json()["id"]}]
-        page = client.get(f"/api/repositories/{repository['id']}/pages/overview")
+        assert pages.json() == [{"path": "get-started/overview", "title": "Overview", "lifecycle_status": "published", "generation_run_id": generated.json()["id"]}]
+        page = client.get(f"/api/repositories/{repository['id']}/pages/get-started/overview")
         assert page.status_code == 200
         assert page.json()["citations"] == [{"path": "app.py", "line_start": 1, "line_end": 3}]
 
@@ -159,9 +159,9 @@ def test_operator_read_views_expose_durable_runs_and_indexed_sources_only(monkey
 def test_missing_or_invalid_citations_fail_without_publishing(monkeypatch, response):
     database, repository, settings = setup_indexed_repository(monkeypatch)
     FakeGenerator.response = response
-    result = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    result = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert result.status == "failed"
-    assert WikiStore(database).get_page(repository["id"], "overview") is None
+    assert WikiStore(database).get_page(repository["id"], "get-started/overview") is None
     run = WikiStore(database).get_run(result.run_id)
     assert run["status"] == "failed"
     assert "citation" in run["error"] or "valid cited page" in run["error"]
@@ -170,9 +170,9 @@ def test_missing_or_invalid_citations_fail_without_publishing(monkeypatch, respo
 def test_generator_failure_is_durable_and_does_not_publish(monkeypatch):
     database, repository, settings = setup_indexed_repository(monkeypatch)
     FakeGenerator.error = GenerationError("generation service unavailable")
-    result = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    result = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert result.status == "failed"
-    assert WikiStore(database).get_page(repository["id"], "overview") is None
+    assert WikiStore(database).get_page(repository["id"], "get-started/overview") is None
     assert WikiStore(database).get_run(result.run_id)["error"] == "generation service unavailable"
 
 
@@ -188,11 +188,11 @@ def test_generation_limit_rejects_extra_work_without_creating_a_run(monkeypatch)
 
     monkeypatch.setattr(FakeGenerator, "generate", slow_generate)
     first_result: list = []
-    thread = threading.Thread(target=lambda: first_result.append(generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "first", "First")))
+    thread = threading.Thread(target=lambda: first_result.append(generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "get-started/first", "First")))
     thread.start()
     assert started.wait(5)
     with pytest.raises(GenerationBusyError, match="generation concurrency limit reached"):
-        generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "second", "Second")
+        generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "get-started/second", "Second")
     release.set()
     thread.join(timeout=5)
     assert first_result[0].status == "succeeded"
@@ -212,11 +212,11 @@ def test_generation_api_returns_the_bounded_response_when_limit_is_reached(monke
 
     monkeypatch.setattr(FakeGenerator, "generate", slow_generate)
     first_result: list = []
-    thread = threading.Thread(target=lambda: first_result.append(generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "first", "First")))
+    thread = threading.Thread(target=lambda: first_result.append(generate_wiki_page(Database(DATABASE_URL), settings, repository["id"], "get-started/first", "First")))
     thread.start()
     assert started.wait(5)
     with TestClient(create_app(settings)) as client:
-        response = client.post(f"/api/repositories/{repository['id']}/pages", json={"path": "second", "title": "Second"})
+        response = client.post(f"/api/repositories/{repository['id']}/pages", json={"path": "get-started/second", "title": "Second"})
     assert response.status_code == 409
     assert response.json()["detail"] == "generation concurrency limit reached"
     release.set()
@@ -226,18 +226,18 @@ def test_generation_api_returns_the_bounded_response_when_limit_is_reached(monke
 
 def test_persistence_failure_preserves_existing_published_page(monkeypatch):
     database, repository, settings = setup_indexed_repository(monkeypatch)
-    first = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    first = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert first.status == "succeeded"
-    old_page = WikiStore(database).get_page(repository["id"], "overview")
+    old_page = WikiStore(database).get_page(repository["id"], "get-started/overview")
     FakeGenerator.response = '{"content":"# Replacement","citations":[{"path":"app.py","line_start":1,"line_end":3}]}'
 
     def fail_publish(*_args, **_kwargs):
         raise RuntimeError("controlled database publication failure")
 
     monkeypatch.setattr(WikiStore, "publish", fail_publish)
-    failed = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    failed = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert failed.status == "failed"
-    preserved = WikiStore(database).get_page(repository["id"], "overview")
+    preserved = WikiStore(database).get_page(repository["id"], "get-started/overview")
     assert preserved["content"] == old_page["content"]
     failed_run = WikiStore(database).get_run(failed.run_id)
     assert failed_run["error"] == "publication failed: RuntimeError"
@@ -253,17 +253,17 @@ def test_mermaid_failure_is_durable_and_preserves_prior_publication(monkeypatch)
         def render(self, source): return RenderedDiagram(source, '<svg xmlns="http://www.w3.org/2000/svg" style="max-width: 86.6562px; background-color: white;"><text x="1" y="2">safe</text></svg>')
 
     monkeypatch.setattr("hydrawiki.wiki.MermaidRenderer", SafeRenderer)
-    first = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    first = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert first.status == "succeeded"
-    assert WikiStore(database).get_page(repository["id"], "overview")["diagrams"][0]["status"] == "safe"
+    assert WikiStore(database).get_page(repository["id"], "get-started/overview")["diagrams"][0]["status"] == "safe"
 
     class FailingRenderer:
         def __init__(self, *_args): pass
         def render(self, _source): raise MermaidError("Mermaid source failed server-side validation")
 
     monkeypatch.setattr("hydrawiki.wiki.MermaidRenderer", FailingRenderer)
-    failed = generate_wiki_page(database, settings, repository["id"], "overview", "Overview")
+    failed = generate_wiki_page(database, settings, repository["id"], "get-started/overview", "Overview")
     assert failed.status == "failed"
-    assert WikiStore(database).get_page(repository["id"], "overview")["generation_run_id"] == first.run_id
+    assert WikiStore(database).get_page(repository["id"], "get-started/overview")["generation_run_id"] == first.run_id
     run = WikiStore(database).get_run(failed.run_id)
     assert run["diagrams"] == [{"ordinal": 0, "source": "flowchart TD\nA-->B", "status": "failed", "svg": None, "error": "Mermaid source failed server-side validation"}]

@@ -7,9 +7,14 @@ label { display: grid; gap: .35rem; font-weight: 650; }
 h1, h2, h3, p { margin-top: 0; }
 .eyebrow { color: #147d92; font-size: .78rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .reader-shell, .operator-shell { max-width: 88rem; margin: 0 auto; padding: 2rem; }
+.reader-shell { background: #f8fafb; }
 .reader-header, .operator-header { display: flex; align-items: start; justify-content: space-between; gap: 2rem; padding: 2rem 0 1.25rem; }
-.reader-header h1 { max-width: 42rem; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.05; letter-spacing: -.04em; margin-bottom: 0; }
+.reader-header h1 { max-width: 42rem; font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.1; letter-spacing: -.035em; margin-bottom: 0; }
+.operator-shell { max-width: 76rem; background: #17202a; color: #edf5f6; min-height: 100vh; }
+.operator-header { border-bottom: 1px solid #41525c; }
 .operator-header h1 { font-size: clamp(2rem, 5vw, 3.4rem); margin-bottom: .5rem; }
+.operator-header .eyebrow, .operator-header p { color: #9bc4ce; }
+.operator-shell .quiet-button { color: #dff0f3; border-color: #52616b; }
 .quiet-button { color: #147d92; background: transparent; border: 1px solid #9bc4ce; white-space: nowrap; }
 .repository-bar { display: flex; align-items: end; gap: 1.5rem; padding: 1rem 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .8rem; box-shadow: 0 8px 24px rgb(23 32 42 / 4%); }
 .repository-bar p { margin: 0 0 .65rem; color: #52616b; }
@@ -20,7 +25,12 @@ h1, h2, h3, p { margin-top: 0; }
 .wiki-layout { display: grid; grid-template-columns: minmax(13rem, 16rem) minmax(0, 46rem) minmax(10rem, 13rem); justify-content: center; gap: clamp(1.5rem, 4vw, 3.5rem); margin-top: 2rem; }
 .page-navigation { align-self: start; position: sticky; top: 1.5rem; }
 .page-navigation h2 { font-size: 1.1rem; margin: .25rem 0 1.5rem; overflow-wrap: anywhere; }
-.navigation-help { color: #52616b; font-size: .85rem; margin-bottom: .4rem; }
+.wiki-section { border-top: 1px solid #d9e2e7; padding: .3rem 0; }
+.section-toggle { display: flex; justify-content: space-between; align-items: baseline; width: 100%; color: #263842; background: transparent; padding: .55rem .4rem; text-align: left; font-weight: 750; }
+.section-toggle:hover { color: #0d5260; background: #edf5f6; }
+.section-toggle small { color: #72838c; font-weight: 600; }
+.section-pages { display: grid; gap: .1rem; padding: 0 0 .35rem; }
+.empty-section { margin: .3rem .75rem .55rem; color: #72838c; font-size: .8rem; font-style: italic; }
 .page-link { display: grid; gap: .2rem; width: 100%; color: #41525c; background: transparent; text-align: left; padding: .7rem .75rem; border-radius: .35rem; }
 .page-link span { color: #72838c; font-size: .75rem; }
 .page-link:hover, .page-link.active { color: #0d5260; background: #dff0f3; font-weight: 700; }
@@ -63,9 +73,10 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f0f4f5; paddi
 .source-drawer h3 { margin-bottom: .25rem; overflow-wrap: anywhere; }
 .source-drawer p { color: #52616b; margin-bottom: 0; }
 .source-drawer pre { margin: 0; max-height: 22rem; overflow: auto; }
-.operator-shell { max-width: 66rem; }
 .dashboard-section { margin: 2rem 0; }
-form, .repository-card, .run, .page-preview, .source { display: grid; gap: 1rem; padding: 1.25rem; background: white; border: 1px solid #d9e2e7; border-radius: .75rem; margin: 1rem 0; }
+.operator-shell form, .operator-shell .repository-card, .operator-shell .run, .operator-shell .page-preview, .operator-shell .source { display: grid; gap: 1rem; padding: 1.25rem; background: #fff; color: #17202a; border: 1px solid #d9e2e7; border-radius: .75rem; margin: 1rem 0; }
+.generation-action { display: grid; gap: .75rem; margin: 1rem 0; padding: 1.25rem; color: #17202a; background: #dff0f3; border: 1px solid #9bc4ce; border-radius: .75rem; }
+.generation-action h3, .generation-action p { margin-bottom: 0; }
 .repository-card { grid-template-columns: 1fr auto; align-items: center; }
 .repository-card p, .run p, .source p, .page-preview p { color: #52616b; margin-bottom: 0; }
 .repository-name { color: #147d92; background: transparent; padding: 0; font-size: 1.15rem; font-weight: 700; }
@@ -76,10 +87,14 @@ form, .repository-card, .run, .page-preview, .source { display: grid; gap: 1rem;
 .run.failed { border-left: .4rem solid #a22626; }
 .run.available { border-left: .4rem solid #147d92; }
 .error { color: #a22626; }
+.invalid-pages { margin: 1rem 0; padding: 1rem 1.25rem; color: #4e2600; background: #fff3df; border: 1px solid #e1aa55; border-radius: .75rem; }
+.invalid-pages h3 { margin-bottom: .4rem; }
+.invalid-pages p { margin-bottom: .65rem; }
+.invalid-pages ul { margin: 0; padding-left: 1.2rem; }
 .diagram-card { margin: 1.75rem 0; padding: 1rem; background: #fbfdfd; border: 1px solid #c9e1e5; border-radius: .7rem; overflow-x: auto; }
 .diagram-card figcaption { margin-bottom: .75rem; color: #0d5260; font-size: .75rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .diagram-card pre { margin: .75rem 0 0; }
 .diagram-failed { border-color: #e2bcbc; background: #fffafa; }
 .diagram { display: block; min-width: 34rem; max-width: 100%; height: auto; background: #fff; }
 @media (max-width: 900px) { .wiki-layout { grid-template-columns: minmax(12rem, 15rem) minmax(0, 46rem); } .page-outline { grid-column: 2; position: static; margin-top: -2.5rem; } }
-@media (max-width: 700px) { .reader-shell, .operator-shell { padding: 1.25rem; } .reader-header, .operator-header, .repository-bar { display: grid; gap: 1rem; } .wiki-layout { grid-template-columns: 1fr; gap: 1.5rem; } .page-navigation { position: static; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); } .page-navigation .eyebrow { grid-column: 1 / -1; } .page-outline { grid-column: auto; margin-top: 0; } .diagram { min-width: 28rem; } .repository-card { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .reader-shell, .operator-shell { padding: 1.25rem; } .reader-header, .operator-header, .repository-bar { display: grid; gap: 1rem; } .wiki-layout { grid-template-columns: 1fr; gap: 1.5rem; } .page-navigation { position: static; } .page-outline { grid-column: auto; margin-top: 0; } .diagram { min-width: 28rem; } .repository-card { grid-template-columns: 1fr; } }
