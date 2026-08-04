@@ -8,18 +8,18 @@ Docker Compose runs only HydraWiki-owned services. Generation and embeddings are
 
 ```mermaid
 flowchart LR
-  Browser[Browser] --> FE[frontend :8080]
-  FE --> API[api :8000]
-  API --> PG[(postgres)]
-  API --> QD[(qdrant)]
-  Worker[worker] --> PG
+  Browser[Browser] --> FE["Frontend :8080"]
+  FE --> API["API :8000"]
+  API --> PG[(Postgres)]
+  API --> QD[(Qdrant)]
+  Worker[Worker] --> PG
   Worker --> QD
-  Worker --> Ollama[Ollama embeddings]
-  API --> Gen[LiteLLM generation]
-  API --> MMDC[mmdc Mermaid CLI]
-  HostRepos/repositories ro] --> API
-  Host --> Worker
-  Git[Public HTTPS Git] --> Worker
+  Worker --> Ollama["Ollama embeddings"]
+  API --> Gen["LiteLLM generation"]
+  API --> MMDC["mmdc Mermaid CLI"]
+  HostRepos["/repositories (read-only)"] --> API
+  Host[Host] --> Worker
+  Git["Public HTTPS Git"] --> Worker
 ```
 
 | Service | Image / build | Role |
