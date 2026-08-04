@@ -67,7 +67,7 @@ Ingest concurrency is gated with PostgreSQL advisory locks (global slot bound + 
 4. OpenAI-compatible adapter calls the configured generation endpoint
 5. Response JSON is validated; citations are checked against selected ranges
 6. Mermaid fences are rendered and SVG-accepted, or the run fails
-7. Only then is a `wiki_pages` row published (`lifecycle_status = published`)
+7. Only then is the complete source-derived `wiki_pages` set published (`lifecycle_status = published`)
 
 ### Deletion
 

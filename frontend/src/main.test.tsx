@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { App, renderDocument, SafeDiagram } from "./main";
+import { App, groupedPages, renderDocument, SafeDiagram, WIKI_GROUPS } from "./main";
 
 const repository = {
   id: "repo-1",
@@ -123,6 +123,23 @@ test("renders Markdown and preserves a Mermaid failure without breaking the docu
     screen.getByText("Mermaid diagram could not be rendered"),
   ).toBeInTheDocument();
   expect(screen.getByText("invalid syntax")).toBeInTheDocument();
+});
+
+test("keeps the five reader groups visible when source-derived groups are empty", () => {
+  const grouped = groupedPages([
+    { path: "concepts/service", title: "Service", lifecycle_status: "published", generation_run_id: "g1" },
+  ]);
+  expect(WIKI_GROUPS.map((group) => group.label)).toEqual([
+    "Get started",
+    "Concepts",
+    "Guides",
+    "Reference",
+    "Workflows",
+  ]);
+  expect(grouped.concepts).toHaveLength(1);
+  expect(grouped.guides).toHaveLength(0);
+  expect(grouped.reference).toHaveLength(0);
+  expect(grouped.workflows).toHaveLength(0);
 });
 
 test("renders validated Mermaid SVG", () => {

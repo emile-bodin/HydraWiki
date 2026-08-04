@@ -4,9 +4,10 @@
 
 ## Purpose
 
-Generate a **published** wiki page from **indexed source chunks**, with:
+Generate a **published** repository-specific wiki from **indexed source chunks**, with:
 
-- Structured model output (`content` + `citations`)
+- A derived structure containing the fixed reader groups and a variable number of source-supported pages
+- Structured page output (`group` + `path` + `title` + `content` + `citations`)
 - Citation validation against selected chunk line ranges
 - Mermaid validation before publication
 - Durable run records and failure stages
@@ -20,17 +21,12 @@ Implementation: `wiki.py` (`generate_wiki_page`), prompt `prompts/wiki-v2.txt`, 
 POST /api/repositories/{repository_id}/pages
 Content-Type: application/json
 
-{
-  "path": "overview",
-  "title": "HydraWiki Overview",
-  "source_paths": null
-}
+{"source_paths": null}
 ```
 
 | Field | Rules |
 |-------|--------|
-| `path` | 1–500 characters; page identity within the repository |
-| `title` | 1–200 characters; injected into the prompt |
+| `path` / `title` | Optional legacy fields; the operator does not send them |
 | `source_paths` | Optional list of source paths; `null`/omitted uses general selection order |
 
 Response: `GenerationRunResponse` (201 on accepted/completed run persistence). Busy generation returns **409**.
@@ -52,10 +48,10 @@ Read paths:
 | `source_selection` | Load chunks; enforce character budget |
 | `prompt` | Render `wiki-v2` template; store prompt artifact |
 | `generation` | Call OpenAI-compatible endpoint |
-| `response_validation` | Parse JSON into `GeneratedDocument` |
+| `response_validation` | Parse and validate the complete derived structure and page documents |
 | `citation_validation` | Ensure citations map to indexed, selected ranges |
 | `mermaid_validation` | Render and accept every Mermaid fence |
-| `publication` | Upsert `wiki_pages` + `wiki_page_sources`; mark run succeeded |
+| `publication` | Atomically replace the repository's published page set and mark run succeeded |
 
 On failure: run becomes `failed` with truncated error text; **existing published pages are not replaced** by failed content. Mermaid failure stores diagram rows with `status=failed` and blocks publication.
 
@@ -90,21 +86,19 @@ Placeholders:
 - `__TITLE__`
 - `__SOURCE_EXCERPTS__` — blocks like `--- path:start-end ---` plus chunk text
 
-Model must return **JSON only** with exactly:
+Model must return **JSON only** with exactly `structure` and `pages`. `structure` always contains the five fixed groups (`get-started`, `concepts`, `guides`, `reference`, `workflows`) and may contain zero or more source-derived pages per group. `pages` contains only the planned pages; unsupported standard pages are omitted.
+
+Each page has this shape:
 
 ```json
-{
-  "content": "markdown...",
-  "citations": [
-    {"path": "...", "line_start": 1, "line_end": 2}
-  ]
-}
+{"group":"concepts","path":"concepts/example","title":"Example","content":"markdown...","citations":[{"path":"...","line_start":1,"line_end":2}]}
 ```
 
 Prompt rules (product intent encoded in the template):
 
 - Use only provided excerpts; no general knowledge
-- Architecture-first overview with a fixed heading order when evidence supports it
+- Source-derived pages only; do not fill empty groups with generic API, configuration, or operations pages
+- Mermaid node IDs are stable simple identifiers; labels and paths are quoted separately
 - At most two Mermaid diagrams; standard diagram structure only (no `config` frontmatter, `%%{...}%%`, `classDef`, presentation styling, or `click`)
 - Citations only in the JSON array, not inside markdown content
 
@@ -141,11 +135,12 @@ Duplicates are deduplicated before publish. At least one citation is required by
 
 ## Publication
 
-On success, within a transaction:
+On success, within one transaction:
 
-1. Insert or update `wiki_pages` for `(repository_id, path)` with `lifecycle_status = 'published'`
+1. Insert or update the variable set of `wiki_pages` for `(repository_id, path)` with `lifecycle_status = 'published'`
 2. Replace `wiki_page_sources` rows for that page
-3. Mark generation run `succeeded` with `provider_model`
+3. Remove pages no longer in the derived structure
+4. Mark generation run `succeeded` with `provider_model`
 
 Only `published` pages are listed/read through the page APIs. There is no “draft” or “partial page” publish path in the MVP schema.
 
@@ -159,7 +154,7 @@ Only `published` pages are listed/read through the page APIs. There is no “dra
 
 ## Operator UI behavior
 
-- Generate form defaults: path `overview`, title `HydraWiki Overview`
+- One `Generate wiki` action derives the structure and page titles; no manual path, title, group, or section selection
 - Disabled until successful ingestion evidence exists
 - Polls generation runs ~1.5s while running
 - Shows configured model, provider model, prompt version, failure stage, errors, and diagrams

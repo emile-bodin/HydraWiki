@@ -15,6 +15,7 @@ PostgreSQL is the **authoritative** store. Schema changes ship as ordered SQL mi
 | `005_wiki_generation.sql` | `generation_runs`, `generation_artifacts`, `wiki_pages`, `wiki_page_sources` |
 | `006_mermaid_diagrams.sql` | `generation_diagrams` |
 | `007_generation_failure_stage.sql` | `failure_stage` on generation runs |
+| `008_source_derived_wiki.sql` | Derived wiki structure, navigation order/group, and per-page Mermaid ownership |
 
 Qdrant holds **derived** vectors keyed with repository/chunk identity metadata; vector IDs are referenced from `chunks.vector_id`.
 
@@ -61,7 +62,7 @@ Uniqueness includes repository, path, content hash, ordinal, chunker, embedding 
 
 **`generation_runs`**
 
-- `page_path`, `status` (`running` \| `succeeded` \| `failed`)
+- `page_path` (`wiki` for a repository-wide run), `wiki_structure` JSONB, `status` (`running` \| `succeeded` \| `failed`)
 - `source_selection` JSONB
 - `generation_url`, `configured_model`, `provider_model`
 - `prompt_version`, `error`, `failure_stage`
@@ -73,12 +74,13 @@ Uniqueness includes repository, path, content hash, ordinal, chunker, embedding 
 
 - Unique `(repository_id, path)`
 - `lifecycle_status` must be `published`
-- `generation_run_id` unique FK to the producing run
+- `generation_run_id` FK to the producing run (one run can publish multiple pages)
+- `navigation_group`, `navigation_order`
 - `content`, `title`
 
 **`wiki_page_sources`** — citation rows: path + inclusive line range; PK includes those fields.
 
-**`generation_diagrams`** — ordinal Mermaid outcomes with XOR constraint on safe SVG vs failed error.
+**`generation_diagrams`** — ordinal/page-path Mermaid outcomes with XOR constraint on safe SVG vs failed error.
 
 ## Cascades and delete
 
